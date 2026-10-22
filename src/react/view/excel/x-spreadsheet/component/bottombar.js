@@ -304,11 +304,10 @@ export default class Bottombar {
       }, () => {
         item.removeClass('dragging');
         this.hideDropMarker();
-        if (dragging) {
+        const originalRect = item.box();
+        if (dragging && (lastClientX < originalRect.left || lastClientX > originalRect.right)) {
           const toIndex = this.findTabDropIndex(lastClientX);
-          if (toIndex >= 0 && toIndex !== fromIndex) {
-            this.moveFunc(fromIndex, toIndex);
-          }
+          if (toIndex >= 0 && toIndex !== fromIndex) this.moveFunc(fromIndex, toIndex);
         } else {
           this.clickSwap2(item);
         }

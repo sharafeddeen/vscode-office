@@ -14,6 +14,29 @@ export function valueSnapshot(sheets:SheetData[]) {
     visitCells(sheets,(cell,sheet,ri,ci)=>values.set(JSON.stringify([sheet.name,ri,ci]),cell.text ?? ''));
     return values;
 }
+/** Navigation, zoom, cached values and spare viewport rows/columns are not edits. */
+export function editSnapshot(sheets:SheetData[]):string {
+    const normalize=(value:any):any=>{
+        if(Array.isArray(value))return value.map(normalize);
+        if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().filter(k=>value[k]!==undefined).map(k=>[k,normalize(value[k])]));
+        return value;
+    };
+    return JSON.stringify(normalize(sheets.map(sheet=>{
+        const {styles,rows,cols,...properties}=sheet;
+        const contentRows=Object.fromEntries(Object.entries(rows ?? {}).filter(([ri])=>ri!=='len').flatMap(([ri,row]:any)=>{
+            const {cells,...rowProperties}=row;
+            const contentCells=Object.fromEntries(Object.entries(cells ?? {}).flatMap(([ci,value]:any)=>{
+                const {previewCell,nativeDerived,date1904,savedValue,savedType,hasSavedValue,numFmtFormat,style,...cell}=value;
+                const resolved={...cell,style:styles?.[style]};
+                if(!resolved.text)delete resolved.text;
+                if(resolved.formulaPreview===false)delete resolved.formulaPreview;
+                return Object.keys(resolved).some(k=>resolved[k]!==undefined)?[[ci,resolved]]:[];
+            }));
+            return Object.keys(rowProperties).length||Object.keys(contentCells).length?[[ri,{...rowProperties,cells:contentCells}]]:[];
+        }));
+        return {...properties,rows:contentRows,cols:Object.fromEntries(Object.entries(cols ?? {}).filter(([ci])=>ci!=='len'))};
+    })));
+}
 /** Any content/structure change may affect any formula, including cross-sheet references. */
 export function invalidateEditedResults(sheets:SheetData[], previous:Map<string,string>, csv=false) {
     const next = valueSnapshot(sheets);

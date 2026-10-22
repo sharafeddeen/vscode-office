@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {fixture} from './fixture';
 import {loadSheets} from '../../src/react/view/excel/excel_reader';
 import {findAllInSheets,replaceAllInSheets} from '../../src/react/view/excel/excel_find';
-import {valueSnapshot,invalidateEditedResults,overlayResults,summarize} from '../../src/spreadsheet/editing';
+import {valueSnapshot,editSnapshot,invalidateEditedResults,overlayResults,summarize} from '../../src/spreadsheet/editing';
 
 test('editing inputs invalidates cross-sheet formula caches but formatting does not',async()=>{
     const source=await fixture(),data=await loadSheets(source.buffer as ArrayBuffer,'.xlsx');
@@ -47,4 +47,25 @@ test('find matches whole saved results and replacement changes the intended shee
     assert.equal(replaceAllInSheets(data.sheets,'Heat allocation','New title',{allSheets:true,wholeCell:true}),1);
     invalidateEditedResults(data.sheets,before);
     assert.equal(summarize(data.sheets)[0].cells['0:0'],'New title');
+});
+
+test('edit detection ignores browsing caches and unused styles, but catches formatting and document edits',async()=>{
+    const source=await fixture(),data=await loadSheets(source.buffer as ArrayBuffer,'.xlsx');
+    const initial=editSnapshot(data.sheets);
+    data.sheets[0].rows!.len!+=100;
+    data.sheets[0].cols!.len!+=10;
+    data.sheets[0].styles!.push({font:{bold:true}});
+    data.sheets[0].rows![4].cells[7].savedValue='different cached result';
+    (data.sheets[0] as any).rows[1000]={cells:{0:{text:''}}};
+    assert.equal(editSnapshot(data.sheets),initial);
+    const cell=data.sheets[0].rows![4].cells[1],oldStyle=cell.style;
+    cell.style=data.sheets[0].styles!.length-1;
+    assert.notEqual(editSnapshot(data.sheets),initial,'Formatting is a real edit');
+    cell.style=oldStyle;
+    data.sheets[0].rows![4].height=77;
+    assert.notEqual(editSnapshot(data.sheets),initial,'Row resize is a real edit');
+    delete data.sheets[0].rows![4].height;
+    assert.equal(editSnapshot(data.sheets),initial);
+    data.sheets[0].name='Renamed';
+    assert.notEqual(editSnapshot(data.sheets),initial);
 });

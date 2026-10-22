@@ -10,7 +10,7 @@ const VIEW='sharafeddeen.spreadsheetViewer';
 const WORKBOOKS=new Set(['xlsx','xlsm','xls','ods']);
 interface Document extends vscode.CustomDocument {
     source:Uint8Array;dirty:boolean;readonly:boolean;generation:number;revision:number;
-    native?:UnoDocument;queue:Promise<any>;model?:any[];
+    native?:UnoDocument;queue:Promise<any>;model?:any[];nativeSource?:Uint8Array;nativeAllowed?:boolean;nativeOpening?:AbortController;closed?:boolean;
     panel?:vscode.WebviewPanel;load?:()=>Promise<void>;
     request?:(type:string,content:any)=>Promise<any>;lastWrite?:number;restored?:Uint8Array;
 }
@@ -20,7 +20,7 @@ export function activate(context:vscode.ExtensionContext) {
     const cacheRoot=join(context.globalStorageUri.fsPath,'calculation-cache');
     const output=vscode.window.createOutputChannel('Ahmed Spreadsheet Viewer');
     const changes=new vscode.EventEmitter<vscode.CustomDocumentContentChangeEvent<Document>>();
-    context.subscriptions.push(output,changes,{dispose(){for(const document of documents)void document.native?.dispose();}});
+    context.subscriptions.push(output,changes,{dispose(){for(const document of documents){document.closed=true;document.nativeOpening?.abort();void document.native?.dispose();}}});
     const enqueue=<T>(document:Document,action:()=>Promise<T>):Promise<T>=>{
         const task=document.queue.then(action);document.queue=task.catch(()=>{});return task;
     };
@@ -30,7 +30,20 @@ export function activate(context:vscode.ExtensionContext) {
             workerPath:join(context.extensionPath,'out','backend','uno-worker.py'),timeoutMs:config.get<number>('timeoutSeconds',90)*1000};
     };
     const ensureNative=async(document:Document)=>{
-        if(!document.native)throw new Error('Native workbook editing is unavailable. Reopen in a trusted workspace with LibreOffice/Python UNO installed.');
+        if(!document.native){
+            if(!document.nativeAllowed||!vscode.workspace.isTrusted)throw new Error('Native workbook editing requires a trusted workspace and the LibreOffice backend.');
+            if(!document.model)throw new Error('Spreadsheet preview is not ready.');
+            await document.panel?.webview.postMessage({type:'status',content:{value:'Starting LibreOffice for editing/calculation…'}});
+            const opening=new AbortController();document.nativeOpening=opening;
+            let native:UnoDocument|undefined;
+            try{
+                native=await UnoDocument.open(document.nativeSource ?? document.source,extname(document.uri.path).slice(1),{...nativeOptions(),signal:opening.signal});
+                await native.bind(document.model);
+                if(document.closed||opening.signal.aborted)throw new Error('Native document opening cancelled');
+                document.native=native;
+            }catch(e){await native?.dispose();throw e;}
+            finally{if(document.nativeOpening===opening)document.nativeOpening=undefined;}
+        }
         if(!document.native.alive){
             const recovery=await document.native.recovery();
             const replacement=await UnoDocument.open(recovery.bytes,'ods',nativeOptions());
@@ -52,7 +65,8 @@ export function activate(context:vscode.ExtensionContext) {
     };
     const serialize=async(document:Document,ext=extname(document.uri.path).slice(1))=>{
         if(WORKBOOKS.has(extname(document.uri.path).slice(1).toLowerCase())){
-            if(document.native){
+            if(!document.dirty&&!document.native&&ext===extname(document.uri.path).slice(1).toLowerCase())return document.nativeSource ?? document.source;
+            if(document.nativeAllowed||document.native){
                 const current=await currentModel(document);
                 await syncModel(document,current.model);
                 return (await ensureNative(document)).export(ext);
@@ -82,7 +96,7 @@ export function activate(context:vscode.ExtensionContext) {
             const source=await vscode.workspace.fs.readFile(uri),stat=await vscode.workspace.fs.stat(uri);
             const document:Document={uri,source,dirty:!!openContext.backupId,
                 readonly:!!(stat.permissions! & vscode.FilePermission.Readonly)||extname(uri.path).toLowerCase()==='.xlsm',
-                generation:0,revision:0,queue:Promise.resolve(),dispose(){documents.delete(document);void document.native?.dispose();}};
+                generation:0,revision:0,queue:Promise.resolve(),dispose(){document.closed=true;document.nativeOpening?.abort();documents.delete(document);void document.native?.dispose();}};
             if(openContext.backupId)document.restored=await vscode.workspace.fs.readFile(vscode.Uri.parse(openContext.backupId));
             documents.add(document);return document;
         },
@@ -127,7 +141,7 @@ export function activate(context:vscode.ExtensionContext) {
             const calculate=async(revision=0)=>{
                 if(disposed)return;
                 if(!vscode.workspace.isTrusted){await status('Saved results · trust this workspace to recalculate');return;}
-                if(document.native){
+                if(document.nativeAllowed||document.native){
                     await status('Calculating with LibreOffice UNO…');
                     const model=await currentModel(document);
                     await syncModel(document,model.model);
@@ -152,13 +166,14 @@ export function activate(context:vscode.ExtensionContext) {
                     const ext=extname(document.uri.path).slice(1).toLowerCase(),workbook=WORKBOOKS.has(ext);
                     info=['xlsx','xlsm'].includes(ext)?await inspectWorkbook(bytes):undefined;
                     const backend=vscode.workspace.getConfiguration('ahmedSpreadsheet').get('backend','auto');
-                    if(workbook&&vscode.workspace.isTrusted&&['auto','libreoffice'].includes(backend)){
-                        try{document.native=await UnoDocument.open(bytes,ext,nativeOptions());}
-                        catch(e){loadWarning=String(e instanceof Error?e.message:e);output.appendLine('Native editing: '+loadWarning);}
-                    }else if(workbook)loadWarning=!vscode.workspace.isTrusted?'Trust this workspace to enable native editing.':'Select the LibreOffice backend to enable native workbook editing.';
+                    // Viewing never starts or probes the native runtime. Keep the original bytes
+                    // and an immutable preview baseline; open UNO only on edit/recalculation.
+                    document.nativeSource=bytes;
+                    document.nativeAllowed=workbook&&vscode.workspace.isTrusted&&['auto','libreoffice'].includes(backend);
+                    if(workbook&&!document.nativeAllowed)loadWarning=!vscode.workspace.isTrusted?'Trust this workspace to enable native editing.':'Select the LibreOffice backend to enable native workbook editing.';
                     if(version!==document.generation||disposed){await document.native?.dispose();return;}
-                    const readOnly=document.readonly||(workbook&&!document.native);
-                    await panel.webview.postMessage({type:'open',content:{buffer:Array.from(bytes),ext:'.'+ext,readOnly,documentCacheId:key,info,nativeEditing:!!document.native&&!document.readonly,nativeAvailable:!!document.native,nativeWarning:loadWarning}});
+                    const readOnly=document.readonly||(workbook&&!document.nativeAllowed);
+                    await panel.webview.postMessage({type:'open',content:{buffer:Array.from(bytes),ext:'.'+ext,readOnly,documentCacheId:key,info,nativeEditing:!!document.nativeAllowed&&!document.readonly,nativeAvailable:!!document.nativeAllowed,nativeWarning:loadWarning}});
                 }catch(e){await panel.webview.postMessage({type:'loadError',content:String(e instanceof Error?e.message:e)});}
             };
             document.load=load;
@@ -168,6 +183,7 @@ export function activate(context:vscode.ExtensionContext) {
                 session.save=()=>provider.saveCustomDocument(document,new vscode.CancellationTokenSource().token);
                 session.saveAs=(target:vscode.Uri)=>provider.saveCustomDocumentAs(document,target,new vscode.CancellationTokenSource().token);
                 session.isDirty=()=>document.dirty;
+                session.nativeStarted=()=>!!document.native;
                 session.nativeInspect=()=>enqueue(document,async()=> (await ensureNative(document)).request('inspect'));
                 session.idle=()=>document.queue;
                 session.cancel=()=>document.native?.cancel();
@@ -191,11 +207,11 @@ export function activate(context:vscode.ExtensionContext) {
                     if(message.type==='init')await enqueue(document,load);
                     else if(message.type==='previewReady'){
                         await enqueue(document,async()=>{
-                            if(document.native){await document.native.bind(p.model);document.model=p.model;}
-                            await status(document.native?'LibreOffice UNO · document ready':(loadWarning||'Saved results'));
+                            document.model=structuredClone(p.model);
+                            await status(loadWarning||('Saved results'+(info?.missingResults?' · '+info.missingResults+' results need calculation':'')));
                             resolveReady!(p);if(document.dirty)changes.fire({document});
                         });
-                        if(autoGeneration!==document.generation&&info?.missingResults&&vscode.workspace.getConfiguration('ahmedSpreadsheet').get('autoCalculateMissing',true)){autoGeneration=document.generation;background(()=>calculate());}
+                        if(autoGeneration!==document.generation&&info?.missingResults&&vscode.workspace.getConfiguration('ahmedSpreadsheet').get('autoCalculateMissing',false)){autoGeneration=document.generation;background(()=>calculate());}
                     }else if(message.type==='change'){
                         if(!document.readonly){document.revision=p?.revision ?? document.revision;markChanged(document);}
                     }else if(message.type==='nativeSync'){
@@ -208,18 +224,23 @@ export function activate(context:vscode.ExtensionContext) {
                         });
                     }else if(message.type==='nativeCommand'){
                         if(document.readonly)throw new Error('File is read only');
-                        document.revision=p.revision;markChanged(document);
+                        document.revision=p.revision;
                         background(async()=>{
-                            if(p.command.action!=='restore'){await syncModel(document,p.model);await (await ensureNative(document)).operation(p.command);}
+                            let changed=false;
+                            if(p.command.action!=='restore'){
+                                await syncModel(document,p.model);
+                                changed=!!(await (await ensureNative(document)).operation(p.command)).changed;
+                                if(changed)markChanged(document);
+                            }
                             const snapshot=await (await ensureNative(document)).snapshot();
                             const projected=await document.request!('nativeSnapshot',{buffer:Array.from(snapshot.bytes),info:snapshot.info,revision:p.revision,selection:p.selection,history:snapshot.history});
                             await (await ensureNative(document)).bind(projected.model);document.model=projected.model;
-                            await panel.webview.postMessage({type:'nativeReady',content:{revision:p.revision,history:await (await ensureNative(document)).request('inspect')}});
+                            await panel.webview.postMessage({type:'nativeReady',content:{revision:p.revision,changed,restored:p.command.action==='restore',history:await (await ensureNative(document)).request('inspect')}});
                         });
                     }else if(message.type==='nativeProjectionAccepted'){
                         background(async()=>{if(p.revision===document.revision&&document.native?.alive){await document.native.bind(p.model);document.model=p.model;}});
                     }else if(message.type==='recalculate')background(()=>calculate(p?.revision ?? 0));
-                    else if(message.type==='cancel'){controller?.abort();await document.native?.cancel();await status('Calculation cancelled · unsaved native document can reconnect from its checkpoint');}
+                    else if(message.type==='cancel'){controller?.abort();document.nativeOpening?.abort();await document.native?.cancel();await status('Calculation cancelled · unsaved native document can reconnect from its checkpoint');}
                     else if(message.type==='save'||message.type==='nativeSave'){
                         if(document.readonly)throw new Error('File is read only. Use Save As.');
                         if(!document.dirty)markChanged(document);
@@ -251,7 +272,7 @@ export function activate(context:vscode.ExtensionContext) {
                 }),watcher.onDidDelete(()=>void panel.webview.postMessage({type:'loadError',content:'Source workbook was removed.'})));
             }
             listeners.push(panel.onDidDispose(()=>{
-                disposed=true;controller?.abort();sessions.delete(key);listeners.forEach(l=>l.dispose());void document.native?.dispose();
+                disposed=true;document.closed=true;document.nativeOpening?.abort();controller?.abort();sessions.delete(key);listeners.forEach(l=>l.dispose());void document.native?.dispose();
                 for(const pending of requests.values()){clearTimeout(pending.timer);pending.reject(new Error('Editor closed'));}requests.clear();resolveReady!({error:'Preview closed'});
             }));
             let html=new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(context.extensionUri,'out','webview','spreadsheet.html')));

@@ -2,7 +2,7 @@
   "name": "ahmed-spreadsheet-viewer",
   "displayName": "Ahmed Spreadsheet Viewer",
   "description": "Office Viewer spreadsheet editing, saved formula results and native recalculation.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "sharafeddeen",
   "icon": "image/logo.png",
   "engines": {
@@ -91,7 +91,7 @@
           ],
           "default": "auto",
           "scope": "machine",
-          "description": "Auto uses persistent LibreOffice UNO editing when available. Excel remains a read-only preview calculation fallback."
+          "description": "View saved results immediately. Auto starts LibreOffice UNO only for editing or explicit recalculation; Excel is a read-only calculation fallback."
         },
         "ahmedSpreadsheet.libreOfficePath": {
           "type": "string",
@@ -101,8 +101,8 @@
         },
         "ahmedSpreadsheet.autoCalculateMissing": {
           "type": "boolean",
-          "default": true,
-          "description": "Calculate missing saved results on temporary copies in trusted workspaces."
+          "default": false,
+          "description": "Opt in to calculating missing saved results after preview loads. Off by default so viewing never starts a calculation backend."
         },
         "ahmedSpreadsheet.timeoutSeconds": {
           "type": "number",

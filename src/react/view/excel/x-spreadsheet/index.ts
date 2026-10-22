@@ -259,6 +259,7 @@ export class Spreadsheet {
                 this.handleSheetMenu(key);
             },
             (index: number, value: string) => {
+                if(this.datas[index].name===value)return;
                 if(this.nativeCommand){this.nativeCommand({action:'renameSheet',sheet:index,name:value});return;}
                 this.datas[index].name = value;
                 this.sheet.trigger('change');
@@ -339,9 +340,9 @@ export class Spreadsheet {
     }
 
     moveSheetTo(from: number, to: number): void {
-        if(this.nativeCommand){this.nativeCommand({action:'moveSheet',sheet:from,index:to});return;}
         if (this.bottombar === null) return;
         if (from === to || from < 0 || to < 0 || from >= this.datas.length || to >= this.datas.length) return;
+        if(this.nativeCommand){this.nativeCommand({action:'moveSheet',sheet:from,index:to});return;}
         const [sheet] = this.datas.splice(from, 1);
         this.datas.splice(to, 0, sheet);
         this.bottombar.moveItem(from, to);

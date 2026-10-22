@@ -11,18 +11,20 @@ npm ci --no-audit --no-fund
 npm test
 npm run build
 npm run package
-code --install-extension ahmed-spreadsheet-viewer-0.2.0.vsix --force
+code --install-extension ahmed-spreadsheet-viewer-0.2.1.vsix --force
 ```
 
 Reload VS Code. For a spreadsheet, select **Reopen Editor With → Ahmed Spreadsheet Viewer**. The extension ID is `sharafeddeen.ahmed-spreadsheet-viewer`; it is independent of the Marketplace extension. Existing Markdown, PDF, themes and other editor associations are untouched.
 
-Version 0.2.0 keeps the upstream spreadsheet toolbar and connects workbook editing to a persistent LibreOffice document through Python UNO. Each open workbook has a private headless process, a named-pipe connection and a short temporary directory. The original file is copied into that directory; ordinary edits modify the native document. Save, Save As, backup and revert use that document rather than rebuilding an XLSX from visible cells.
+Version 0.2.1 keeps the upstream spreadsheet toolbar and connects workbook editing to a persistent LibreOffice document through Python UNO. Viewing uses the saved workbook values immediately and starts no native process. The first edit or explicit Recalculate opens a private headless process with a named-pipe connection and a short temporary directory. The original file is copied into that directory; ordinary edits modify the native document. Save, Save As, backup and revert use that document rather than rebuilding an XLSX from visible cells.
 
 Connected edits: cell values/formulas, native numeric/date input parsing, text-format values, fonts, fills, text colors, borders, alignment/wrapping, number formats, ordinary comments, merges, column widths and row heights. Row/column insert/delete and sheet add/delete/rename/duplicate/reorder run in LibreOffice, which updates its references and named ranges. Toolbar undo/redo use LibreOffice’s document history. All imported sheets have tabs, including hidden sheets; the native document retains their visibility.
 
 Changing content invalidates displayed formula caches. Edits are synchronized after a short pause and automatically recalculated by default. Explicit **Recalculate** calls calculateAll on the same document. Complete native output ranges are imported, including array-result cells. Derived array cells are read only in the grid; array creation/resizing/editing is not a complete Excel-equivalent interface.
 
-Writable XLSX/XLS/ODS workbooks open in native editing mode in trusted workspaces when the runtime is available. An unavailable/disabled backend or an untrusted workspace leaves workbooks read only with an explanation. XLSM remains read only to avoid promising VBA preservation. CSV/TSV retain the upstream text editor/save path.
+Writable XLSX/XLS/ODS workbooks allow editing in trusted workspaces with the LibreOffice backend selected. UNO discovery/startup is deferred until the first edit or explicit Recalculate. If the runtime is missing, that action reports the error and preserves the unsaved grid; viewing still works. A disabled backend or an untrusted workspace leaves workbooks read only with an explanation. XLSM remains read only to avoid promising VBA preservation. CSV/TSV retain the upstream text editor/save path.
+
+Sheet switching, selection, scrolling, zoom and theme changes do not edit the workbook, start UNO, or dirty the VS Code tab. Pointer movement within a sheet tab stays a sheet switch rather than reordering the workbook.
 
 VS Code tracks unsaved changes and prompts on close. Source conflicts are checked before overwrite. Native edits never write the source until Save (including VS Code Auto Save if enabled). Save As supports XLSX, XLS and ODS through LibreOffice’s export filters. File-format fidelity is LibreOffice’s import/export fidelity; unsupported Excel-specific features are not guaranteed.
 
@@ -34,14 +36,14 @@ The following interface operations are not connected in this phase: adding/remov
 
 Saved results are displayed without running the canvas widget's limited JavaScript formula evaluator. The formula bar retains the expression. Zero, false, an empty string, a real saved spreadsheet error, and a missing result are distinct. Missing results display **Not calculated**, never a made-up zero or `#NAME?`.
 
-Saved values can be stale; the label says **Saved results**, not verified/current. **Recalculate** explicitly refreshes through the native spreadsheet document. With the default settings, missing results trigger calculation automatically in a trusted workspace. A disabled/unavailable backend leaves an honest saved-result preview.
+Saved values can be stale; the label says **Saved results**, not verified/current. **Recalculate** explicitly refreshes through the native spreadsheet document. Missing results remain visibly marked until Recalculate is requested. Automatic calculation of missing results is an opt-in setting. A disabled/unavailable backend leaves an honest saved-result preview.
 
 Settings:
 - `ahmedSpreadsheet.backend`: `auto` (LibreOffice UNO editing when available), `excel` (read-only calculation fallback), `libreoffice`, or `none`.
 - `ahmedSpreadsheet.libreOfficePath`: optional absolute path to the installed executable.
 - `ahmedSpreadsheet.pythonPath`: optional path to a Python interpreter with UNO.
 - `ahmedSpreadsheet.autoRecalculate`: defaults to true; recalculates after edits.
-- `ahmedSpreadsheet.autoCalculateMissing`: defaults to true.
+- `ahmedSpreadsheet.autoCalculateMissing`: defaults to false (opt-in; enabling it starts a backend after preview load).
 - `ahmedSpreadsheet.timeoutSeconds`: defaults to 90.
 
 Backend executable settings are machine-scoped. Native work requires workspace trust. The worker opens documents with NEVER_EXECUTE macro mode and NO_UPDATE external-link mode. It communicates with its own isolated LibreOffice process over a random named pipe. Cancellation/timeouts terminate that worker’s process tree. The latest accepted native state is checkpointed as ODS through an atomic replacement, allowing reconnection after a stopped worker. Interrupted structural operations may require **Reload native state** before editing resumes.

@@ -398,8 +398,7 @@ function ExcelViewer() {
             });
             spreadSheet.on('change', () => {
                 if (!fileReadOnly) {
-                    spreadSheet.setSaveEnabled(true);
-                    spreadsheetFeatures.changed();
+                    if(spreadsheetFeatures.changed())spreadSheet.setSaveEnabled(true);
                 }
             });
             const savedView = loadViewState(documentCacheIdRef.current);

@@ -4,12 +4,13 @@ import {handler} from '../react/util/vscode';
 import {getConfigs} from '../react/util/vscodeConfig';
 import {serializeSpreadsheet} from '../react/view/excel/excel_writer';
 import {loadSheets} from '../react/view/excel/excel_reader';
-import {valueSnapshot,invalidateEditedResults,overlayResults,summarize} from './editing';
+import {valueSnapshot,editSnapshot,invalidateEditedResults,overlayResults,summarize} from './editing';
 import {applyNativeResults,markDerived} from './native-model';
 
 export function useSpreadsheetFeatures() {
     const grid=useRef<Spreadsheet|null>(null),payload=useRef<any>({});
     const previous=useRef(new Map<string,string>()),revision=useRef(0);
+    const previousEdit=useRef('');
     const timer=useRef<ReturnType<typeof setTimeout>>();
     const busy=useRef(false),nativeDone=useRef<{resolve:()=>void;reject:(e:Error)=>void}>();
     const [status,setStatus]=useState('Saved results'),[warnings,setWarnings]=useState<string[]>([]);
@@ -30,7 +31,7 @@ export function useSpreadsheetFeatures() {
     function loaded(spreadsheet:Spreadsheet,open:any,readerWarnings?:string[]) {
         clearTimeout(timer.current);grid.current=spreadsheet;payload.current=open;revision.current=0;
         markDerived(spreadsheet.getData(),open.info?.arrays);
-        previous.current=valueSnapshot(spreadsheet.getData());installNativeCommands();
+        previous.current=valueSnapshot(spreadsheet.getData());previousEdit.current=editSnapshot(model());installNativeCommands();
         setWarnings([...(open.info?.warnings ?? []),...(readerWarnings ?? []),...(open.nativeWarning?[open.nativeWarning]:[])]);
         setStatus('Saved results'+(open.info?.missingResults?' · '+open.info.missingResults+' results need calculation':''));
         setError('');spreadsheet.on('cell-selected',(cell:any)=>setComment(cell?.comment ?? ''));
@@ -43,17 +44,21 @@ export function useSpreadsheetFeatures() {
         }),50);
     }
     function changed() {
-        if(!grid.current||busy.current)return;
+        if(!grid.current||busy.current)return false;
         const sheets=grid.current.getData();
+        const nextEdit=editSnapshot(sheets);
+        if(nextEdit===previousEdit.current)return false;
         if(invalidateEditedResults(sheets,previous.current,/^\.?(csv|tsv)$/i.test(payload.current.ext ?? ''))) {
             setStatus('Edited · waiting for native calculation');
             previous.current=valueSnapshot(sheets);grid.current.reRender();
         }
+        previousEdit.current=editSnapshot(sheets);
         revision.current++;handler.emit('change',{revision:revision.current});
         if(enabled()){
             clearTimeout(timer.current);
             timer.current=setTimeout(()=>handler.emit('nativeSync',{model:model(),revision:revision.current}),180);
         }
+        return true;
     }
     function nativeCommand(command:any):Promise<void> {
         if(!enabled()||busy.current)return Promise.resolve();
@@ -66,14 +71,14 @@ export function useSpreadsheetFeatures() {
     useEffect(()=>{
         const blockInput=(event:Event)=>{if(busy.current){event.preventDefault();event.stopImmediatePropagation();}};
         for(const type of ['keydown','beforeinput','paste'])window.addEventListener(type,blockInput,true);
-        handler.on('status',p=>{setStatus(p.value);setCalculating(p.value.startsWith('Calculating'));});
+        handler.on('status',p=>{setStatus(p.value);setCalculating(p.value.startsWith('Calculating')||p.value.startsWith('Starting LibreOffice'));});
         handler.on('calculated',async p=>{
             if(!grid.current||p.revision!==revision.current)return;
             const projection=p.native&&p.buffer?await loadSheets(new Uint8Array(p.buffer).buffer,'.xlsx'):undefined;
             if(p.revision!==revision.current)return;
             const sheets=grid.current.getData();
             const missing=p.native?applyNativeResults(sheets,p.results,p.arrays,projection?.sheets):overlayResults(sheets,p.results);
-            previous.current=valueSnapshot(sheets);history(p.history);
+            previous.current=valueSnapshot(sheets);previousEdit.current=editSnapshot(sheets);history(p.history);
             setCalculating(false);setError('');
             setStatus('Recalculated with '+p.backend+(missing?' · '+missing+' results unavailable':''));
             grid.current.reRender();
@@ -98,7 +103,7 @@ export function useSpreadsheetFeatures() {
                 markDerived(data.sheets,p.info?.arrays);
                 grid.current!.loadData(data.sheets);
                 payload.current.info=p.info;
-                previous.current=valueSnapshot(model());
+                previous.current=valueSnapshot(model());previousEdit.current=editSnapshot(model());
                 const selection=p.selection;
                 if(selection)grid.current!.scrollToCell(selection.ri,selection.ci,Math.min(selection.sheetIndex,data.sheets.length-1));
                 history(p.history);
@@ -107,7 +112,7 @@ export function useSpreadsheetFeatures() {
         });
         handler.on('nativeReady',p=>{
             history(p.history);busy.current=false;setBlocking(false);setError('');
-            setStatus('LibreOffice UNO · edits applied');
+            setStatus(p.restored?'Native state restored':p.changed?'LibreOffice UNO · unsaved edits':'No workbook changes');
             handler.emit('nativeRendered',{sheets:summarize(model()),revision:revision.current});
             nativeDone.current?.resolve();nativeDone.current=undefined;
         });
@@ -124,6 +129,16 @@ export function useSpreadsheetFeatures() {
                     grid.current.scrollToCell(p.ri,p.ci,p.sheetIndex ?? 0);
                     const input=document.querySelector('.x-spreadsheet-formula-bar-input') as HTMLInputElement;
                     input.focus();input.dispatchEvent(new FocusEvent('focus'));input.value=p.text;input.dispatchEvent(new Event('input',{bubbles:true}));input.blur();input.dispatchEvent(new FocusEvent('blur'));
+                }else if(p.action==='browse'){
+                    const tabs=Array.from(document.querySelectorAll('.x-spreadsheet-menu > li')) as HTMLElement[];
+                    for(const index of p.sheets ?? [1,0]){
+                        const tab=tabs[index];if(!tab)throw new Error('Sheet tab missing: '+index);
+                        const rect=tab.getBoundingClientRect(),x=rect.left+rect.width*0.75,y=rect.top+rect.height/2;
+                        tab.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:x,clientY:y}));
+                        if(p.jitter)window.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,buttons:1,clientX:x+p.jitter,clientY:y}));
+                        window.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0,clientX:x+(p.jitter ?? 0),clientY:y}));
+                    }
+                }else if(p.action==='noopChange'){changed();
                 }else if(p.action==='undo'||p.action==='redo'){
                     if(enabled())await nativeCommand({action:p.action});else g.sheet.toolbar.change(p.action);
                 }else if(p.action==='nativeOperation')await nativeCommand(p.command);
@@ -133,6 +148,7 @@ export function useSpreadsheetFeatures() {
                 else if(p.action==='theme')(document.querySelector('.dark-mode-toggle') as HTMLButtonElement)?.click();
                 grid.current.reRender();
                 handler.emit('testResponse',{id:p.id,sheets:summarize(model()),data:model(),revision:revision.current,
+                    activeSheet:grid.current.getSelection().sheetIndex,status:document.querySelector('.ahmed-calculation-bar [role=status]')?.textContent,
                     theme:document.body.classList.contains('office-adaptive'),toolbar:!!document.querySelector('.x-spreadsheet-toolbar')});
             }catch(e){handler.emit('testResponse',{id:p.id,error:String(e)});}
         });

@@ -24,6 +24,8 @@ export async function run(){
     const folder=process.env.AHMED_INTEGRATION_DIR!;
     const saved=vscode.Uri.file(join(folder,'saved.xlsx'));
     await vscode.workspace.getConfiguration('ahmedSpreadsheet').update('autoCalculateMissing',false,vscode.ConfigurationTarget.Global);
+    const previewStart=Date.now();
+    await vscode.workspace.getConfiguration('ahmedSpreadsheet').update('pythonPath','C:/nonexistent-viewing-test/python.exe',vscode.ConfigurationTarget.Global);
     await vscode.commands.executeCommand('vscode.openWith',saved,api.viewType);
     const session=await wait(()=>api.sessions.get(saved.toString()),'saved webview session');
     const rendered:any=await bounded(session.ready,'saved preview render');
@@ -39,13 +41,32 @@ export async function run(){
     assert.equal(rendered.sheets[0].cells['10:0'],'#N/A');
 
 
+    const previewMs=Date.now()-previewStart;
+    assert.equal(session.nativeStarted(),false,'Viewing must not start LibreOffice');
     const before=hash(await fs.readFile(saved.fsPath));
+    for(const jitter of [0,7]){
+        const browsed=await session.action({action:'browse',sheets:[1,2,0],jitter});
+        assert.ok(!browsed.error,browsed.error);
+        assert.equal(browsed.activeSheet,0,'Sheet clicks including pointer jitter select the requested sheet');
+        assert.deepEqual(browsed.sheets.map((s:any)=>s.name),rendered.sheets.map((s:any)=>s.name),'Browsing must never reorder sheets');
+        assert.equal(browsed.revision,0,'Browsing must not emit an edit');
+        assert.ok(!browsed.status.includes('edits applied'));
+    }
+    await session.action({action:'noopChange'});
+    await new Promise(r=>setTimeout(r,400));
+    assert.equal(session.isDirty(),false,'Sheet switching and unchanged change events keep the editor clean');
+    assert.equal(session.nativeStarted(),false,'Browsing must not launch the native runtime');
+    assert.equal(hash(await fs.readFile(saved.fsPath)),before);
+    console.log('Saved preview rendered in '+previewMs+'ms; browsing kept native runtime stopped.');
     const matches=await session.action({action:'find',text:'Heat allocation'});assert.equal(matches.matches.length,1);
+    await vscode.workspace.getConfiguration('ahmedSpreadsheet').update('pythonPath','',vscode.ConfigurationTarget.Global);
+    assert.equal(session.nativeStarted(),false);
     const edited=await session.action({action:'edit',ri:4,ci:1,text:'0.5'});
     assert.equal(edited.sheets[0].cells['4:1'],'0.5');assert.equal(edited.sheets[0].cells['4:7'],'Not calculated');
     await wait(()=>session.isDirty(),'VS Code dirty state');
     assert.equal(hash(await fs.readFile(saved.fsPath)),before,'Editing cannot save implicitly');
     const undo=await session.action({action:'undo'});assert.ok(!undo.error,undo.error);assert.equal(Number(undo.sheets[0].cells['4:1']),0.4);
+    assert.equal(session.nativeStarted(),true,'First edit starts UNO using the unedited preview baseline');
     const redo=await session.action({action:'redo'});assert.ok(!redo.error,redo.error);assert.equal(Number(redo.sheets[0].cells['4:1']),0.5);
     const bold=await session.action({action:'bold',ri:4,ci:1});
     const cell=bold.data[0].rows['4'].cells['1'];assert.ok(bold.data[0].styles[cell.style].font.bold);
@@ -67,6 +88,7 @@ export async function run(){
     const missingRender:any=await bounded(missingSession.ready,'missing-result preview render');
     assert.ok(!missingRender.error,missingRender.error);
     assert.equal(missingRender.sheets[0].cells['4:7'],'Not calculated');
+    assert.equal(missingSession.nativeStarted(),false);
     assert.ok(vscode.workspace.isTrusted,'Isolated synthetic integration workspace is trusted');
     await missingSession.recalculate();
     const calculated:any=await wait(()=>{if(missingSession.lastStatus?.includes('unavailable:'))throw new Error(missingSession.lastStatus);return missingSession.calculation;},'native result render',120000);
@@ -123,7 +145,7 @@ export async function run(){
         assert.equal(data.sheets.find((s:any)=>s.name==='QUICK_SPLITS').cells['4:7'],'OK');
         originalVerified=true;
     }
-    await fs.writeFile(join(folder,'result.json'),JSON.stringify({webview:true,canvas:true,sheets:true,savedResults:true,missingResults:true,nativeCalculation:true,toolbar:true,editing:true,undoRedo:true,formatting:true,findReplace:true,saving:true,nativeNames:true,nativeArrays:true,nativeStructure:true,nativeRecovery:true,originalVerified},null,2));
+    await fs.writeFile(join(folder,'result.json'),JSON.stringify({previewMs,lazyNative:true,browsingClean:true,webview:true,canvas:true,sheets:true,savedResults:true,missingResults:true,nativeCalculation:true,toolbar:true,editing:true,undoRedo:true,formatting:true,findReplace:true,saving:true,nativeNames:true,nativeArrays:true,nativeStructure:true,nativeRecovery:true,originalVerified},null,2));
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     console.log('Actual VS Code webview integration checks passed.');
 }

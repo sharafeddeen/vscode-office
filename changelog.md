@@ -1,3 +1,11 @@
+# Ahmed Spreadsheet Viewer 0.2.1
+
+- Render saved workbook contents before starting LibreOffice; native sessions start only on edit or explicit recalculation.
+- Disable automatic calculation of missing results by default; retain an explicit opt-in setting.
+- Treat pointer jitter inside a sheet tab as navigation, never a sheet reorder.
+- Ignore unchanged grid events, cached-result refreshes and viewport expansion when tracking edits.
+- Keep first-edit native binding based on the original unedited preview; test lazy startup and clean sheet browsing in VS Code.
+
 # Ahmed Spreadsheet Viewer 0.2.0
 
 - Persistent Python UNO session: LibreOffice owns the complete workbook during edits, calculation and saving.
