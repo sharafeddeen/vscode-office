@@ -133,6 +133,8 @@
     "test:integration": "node scripts/run-integration.mjs"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.3",
+    "@emnapi/runtime": "^1.11.3",
     "@types/diff-match-patch": "1.0.32",
     "@types/node": "^26.1.0",
     "@types/react": "^19.2.17",
