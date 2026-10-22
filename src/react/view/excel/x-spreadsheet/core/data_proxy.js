@@ -1,3 +1,4 @@
+import { displayCellText } from '../../excel_cell_display';
 /* global document, navigator */
 
 import Selector from './selector';
@@ -645,7 +646,7 @@ export default class DataProxy {
       const row = [];
       for (let ci = sci; ci <= eci; ci += 1) {
         const cell = this.rows.getCell(nri, ci);
-        row.push((cell && cell.text) || '');
+        row.push(cell?.previewCell ? displayCellText(cell, this.getCellStyleOrDefault(nri,ci), (x,y)=>this.rows.getCell(y,x)) : (cell?.text ?? ''));
       }
       copyText.push(row);
     }

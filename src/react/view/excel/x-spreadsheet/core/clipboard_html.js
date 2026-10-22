@@ -1,3 +1,4 @@
+import {displayCellText} from '../../excel_cell_display';
 /* global document, window */
 
 function normalizeColor(value) {
@@ -203,7 +204,8 @@ export function formatHtmlClipboard(data, range) {
         continue;
       }
       const style = data.getCellStyleOrDefault(ri, ci);
-      const text = data.getCellTextOrDefault(ri, ci);
+      const cell = data.rows.getCell(ri, ci);
+      const text = cell?.previewCell ? displayCellText(cell, style, (x,y)=>data.rows.getCell(y,x)) : data.getCellTextOrDefault(ri, ci);
       let extraAttrs = '';
       if (merge) {
         const rowspan = Math.min(merge.eri, eri) - ri + 1;

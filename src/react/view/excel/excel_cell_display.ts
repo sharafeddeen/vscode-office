@@ -10,10 +10,14 @@ export function displayCellText(
     getCell: (x: number, y: number) => CellData | null | undefined,
     evalPaused = false,
 ) {
-    let value: any = cell.text || '';
+    let value: any = cell.text ?? '';
+    if (cell.previewCell) {
+        if (cell.formulaPreview && !cell.hasSavedValue) return 'Not calculated';
+        value = cell.hasSavedValue ? cell.savedValue : value;
+    }
     if (evalPaused) return value;
     try {
-        value = cellEvaluator.render(value, formulam, (x: number, y: number) => getCell(x, y)?.text || '');
+        if (!cell.previewCell) value = cellEvaluator.render(value, formulam, (x: number, y: number) => getCell(x, y)?.text || '');
     } catch {
         // Unsupported formulas must not prevent other cells/sheets from rendering.
         return cell.text;
@@ -21,7 +25,7 @@ export function displayCellText(
     if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
     if (typeof value === 'number' && !Number.isFinite(value)) return '#NUM!';
     if (cell.numFmt && cell.numFmtFormat === style.format && value !== '' && Number.isFinite(Number(value))) {
-        try { return SSF.format(cell.numFmt, Number(value)); } catch { /* Use viewer format below. */ }
+        try { return SSF.format(cell.numFmt, Number(value), {date1904:cell.date1904}); } catch { /* Use viewer format below. */ }
     }
     const formatter = style.format ? formatm[style.format] : undefined;
     return formatter ? formatter.render(value) : value;

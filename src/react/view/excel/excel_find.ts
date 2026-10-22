@@ -36,7 +36,8 @@ function iterSheetCells(
         for (const ciKey of Object.keys(row.cells ?? {})) {
             const ci = Number(ciKey);
             if (Number.isNaN(ci)) continue;
-            const text = row.cells[ci]?.text ?? '';
+            const cell = row.cells[ci];
+            const text = (cell?.text ?? '') + (cell?.hasSavedValue ? '\n' + String(cell.savedValue) : '');
             if (text) cb(ri, ci, text);
         }
     }

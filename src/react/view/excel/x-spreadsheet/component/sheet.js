@@ -570,7 +570,6 @@ function clearClipboard() {
 
 function copy(evt) {
   const { data, selector } = this;
-  if (data.settings.mode === 'read') return;
   data.copy();
   data.copyToSystemClipboard(evt);
   selector.showClipboard();

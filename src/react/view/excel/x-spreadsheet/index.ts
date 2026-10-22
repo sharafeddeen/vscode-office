@@ -87,6 +87,14 @@ export interface ColProperties {
 }
 
 export interface CellData {
+    /** Imported preview data must never be recalculated by the limited canvas evaluator. */
+    previewCell?: boolean;
+    date1904?: boolean;
+    formulaPreview?: boolean;
+    savedValue?: string | number | boolean;
+    savedType?: string;
+    hasSavedValue?: boolean;
+    comment?: string;
     text: string;
     /** Imported numeric format and its corresponding viewer format. */
     numFmt?: string;

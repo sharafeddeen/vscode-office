@@ -4,10 +4,11 @@ node_modules
 .vscode-test/
 .idea/
 *.vsix
-package-lock.json
 .DS_Store
 bun.lock
 yarn.lock
 pnpm-lock.yaml
 pnpm-workspace.yaml
 test/output
+.cache/
+*.log

@@ -1,3 +1,15 @@
+# Ahmed Spreadsheet Viewer 0.1.0
+
+- Independently identified, read-only spreadsheet provider.
+- Relationship-based comment/VML compatibility normalization on disposable data.
+- Faithful saved results, original formulas, real cached errors and missing-result labels.
+- Native Excel/LibreOffice result overlays with cancellation, isolated short temporary paths and cache.
+- Hidden-sheet access, search, copy, zoom and desktop-app action.
+- Synthetic, native, browser-webview and external-corpus regression checks.
+- Original sources remain untouched.
+
+The upstream change history follows.
+
 # Change log
 
 # 4.2.2 2026-10-15

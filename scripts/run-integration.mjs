@@ -1,0 +1,14 @@
+import {build} from 'esbuild';
+import {runTests} from '@vscode/test-electron';
+import {resolve,join} from 'node:path';
+import {spawnSync} from 'node:child_process';
+import {mkdir} from 'node:fs/promises';
+const root=process.cwd(),dir=resolve('.cache/integration-workspace');
+await mkdir(dir,{recursive:true});
+await build({entryPoints:['test/spreadsheet/integration.ts'],outfile:'.cache/integration-test.cjs',bundle:true,platform:'node',format:'cjs',external:['vscode']});
+await build({entryPoints:['scripts/prepare-integration.ts'],outfile:'.cache/prepare-integration.cjs',bundle:true,platform:'node',format:'cjs'});
+const prepared=spawnSync(process.execPath,['.cache/prepare-integration.cjs',dir],{stdio:'inherit'});
+if(prepared.status!==0)process.exit(prepared.status??1);
+const executable=process.env.VSCODE_EXECUTABLE ?? (process.platform==='win32'?join(process.env.LOCALAPPDATA,'Programs/Microsoft VS Code/Code.exe'):undefined);
+delete process.env.ELECTRON_RUN_AS_NODE;
+await runTests({vscodeExecutablePath:process.env.VSCODE_TEST_DOWNLOAD ? undefined : executable,extensionDevelopmentPath:root,extensionTestsPath:resolve('.cache/integration-test.cjs'),extensionTestsEnv:{AHMED_INTEGRATION_DIR:dir,AHMED_ORIGINAL_WORKBOOK:process.env.AHMED_ORIGINAL_WORKBOOK},launchArgs:[dir,'--user-data-dir',resolve('.cache/vscode-profile'),'--extensions-dir',resolve('.cache/vscode-extensions'),'--disable-workspace-trust','--skip-welcome','--skip-release-notes','--disable-updates','--new-window']});

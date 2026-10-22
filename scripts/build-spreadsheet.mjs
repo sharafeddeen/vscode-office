@@ -1,0 +1,10 @@
+import { build as bundle } from 'esbuild';
+import { build as vite } from 'vite';
+import { resolve } from 'node:path';
+import { mkdir, copyFile } from 'node:fs/promises';
+await mkdir('out', {recursive:true});
+await bundle({entryPoints:['src/spreadsheet/extension.ts'],outfile:'out/extension.js',bundle:true,platform:'node',format:'cjs',target:'node18',external:['vscode'],sourcemap:true});
+await vite({configFile:false,root:process.cwd(),base:'./',define:{global:'globalThis'},resolve:{alias:{stream:resolve('src/react/shims/nodeStream.ts'),util:resolve('src/react/shims/nodeUtil.ts')}},build:{outDir:'out/webview',emptyOutDir:true,rollupOptions:{input:resolve('spreadsheet.html')},chunkSizeWarningLimit:2048}});
+await mkdir('out/backend', {recursive:true});
+await copyFile('src/spreadsheet/recalculate-excel.ps1','out/backend/recalculate-excel.ps1');
+console.log('Ahmed Spreadsheet Viewer built.');

@@ -1,3 +1,5 @@
+import {normalizePackage, inspectWorkbook} from '../../../spreadsheet/package';
+import {readResults} from '../../../spreadsheet/results';
 import ExcelJS from '@cweijan/exceljs';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
@@ -28,6 +30,7 @@ type ExcelJsWorksheetWithMerges = ExcelJS.Worksheet & {
 
 export interface ExcelData {
     sheets: SheetData[];
+    warnings?: string[];
     maxCols: number;
     maxLength?: number;
     /** Detected column delimiter when loading CSV/TSV */
@@ -35,7 +38,7 @@ export interface ExcelData {
 }
 
 const MIN_COL_WIDTH = 70;
-const MAX_COL_WIDTH = 300;
+const MAX_COL_WIDTH = 1200;
 const DEFAULT_COL_WIDTH = 100;
 const CHAR_WIDTH = 8;
 const MAX_ROWS_TO_CHECK = 10;
@@ -216,7 +219,9 @@ const convertExcelJsWorksheet = (worksheet: ExcelJS.Worksheet, workbook: ExcelJS
             if (!text && !cellStyle && editable === undefined && !Object.keys(hl).length) return;
 
             const styleIndex = styleRegistry.add(cellStyle);
-            const cellData: CellData = { text };
+            const cellData: CellData = { text, previewCell: true };
+            if (cell.formula) cellData.formulaPreview = true;
+            if (cell.note) cellData.comment = typeof cell.note === 'string' ? cell.note : cell.note.texts?.map(t=>t.text).join('') ?? '';
             if (cell.numFmt) {
                 cellData.numFmt = cell.numFmt;
                 cellData.numFmtFormat = cellStyle?.format;
@@ -313,9 +318,33 @@ const convertExcelJsWorkbook = (
 
 const loadWithExcelJs = async (buffer: ArrayBuffer): Promise<ExcelData> => {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const sortStateXmlMap = await readWorkbookSortStateXml(buffer);
-    return convertExcelJsWorkbook(workbook, sortStateXmlMap);
+    let data: ExcelData;
+    const info = await inspectWorkbook(buffer);
+    const warnings = [...info.warnings];
+    try {
+        const normalized = await normalizePackage(buffer);
+        await workbook.xlsx.load(normalized);
+        const sortStateXmlMap = await readWorkbookSortStateXml(normalized.buffer as ArrayBuffer);
+        data = convertExcelJsWorkbook(workbook, sortStateXmlMap);
+        if (data.sheets.length !== info.sheets.length || data.sheets.some((s,i)=>s.name !== info.sheets[i].name)) throw new Error('Worksheet list mismatch');
+    } catch (error) {
+        data = loadWithSheetJs(buffer);
+        warnings.push('Fallback reader used; some formatting or metadata may be unavailable. ' + (error instanceof Error ? error.message : String(error)));
+    }
+    const results = await readResults(new Uint8Array(buffer));
+    for (const sheet of data.sheets) {
+        for (const [ri,row] of Object.entries(sheet.rows ?? {})) {
+            if (ri === 'len') continue;
+            for (const [ci,cell] of Object.entries((row as any).cells ?? {}) as [string,CellData][]) {
+                cell.previewCell = true;
+                cell.date1904 = info.date1904;
+                const address = XLSX.utils.encode_cell({r:Number(ri),c:Number(ci)});
+                const result = results[sheet.name!]?.[address];
+                if (result && (cell.formulaPreview || (cell.numFmt && result.type === 'n'))) {cell.savedValue=result.value;cell.savedType=result.type;cell.hasSavedValue=true;}
+            }
+        }
+    }
+    return {...data,warnings};
 };
 
 const sheetJsColWidthToPx = (col?: XLSX.ColInfo) => {
@@ -360,9 +389,9 @@ const convertSheetJsWorksheet = (worksheet: XLSX.WorkSheet): Pick<SheetData, 'ro
             const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
             const cell = worksheet[addr];
             if (!cell) continue;
-            const text = formatSheetJsCell(cell);
-            if (!text) continue;
-            cells[ci] = { text };
+            const text = cell.f ? '=' + cell.f : formatSheetJsCell(cell);
+            if (!text && cell.v == null) continue;
+            cells[ci] = { text, previewCell:true, formulaPreview:!!cell.f, ...(cell.f && cell.v !== undefined ? {hasSavedValue:true,savedValue:cell.v,savedType:cell.t} : {}) };
             hasContent = true;
             if (ci + 1 > maxCols) maxCols = ci + 1;
             if (ri + 1 > maxRow) maxRow = ri + 1;
@@ -429,7 +458,7 @@ const loadCsv = (buffer: ArrayBuffer, delimiter?: string): ExcelData => {
         const row = rows[i];
         const cells: Record<number, CellData> = {};
         for (let j = 0; j < row.length; j += 1) {
-            cells[j] = { text: row[j] == null ? '' : String(row[j]) };
+            cells[j] = { text: row[j] == null ? '' : String(row[j]), previewCell:true };
             if (j + 1 > maxCols) maxCols = j + 1;
         }
         processedRows[i] = { cells };

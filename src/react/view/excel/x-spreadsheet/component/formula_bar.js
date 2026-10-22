@@ -111,6 +111,6 @@ export default class FormulaBar {
       this.inputEl.val(text !== undefined ? text : ((cell && cell.text) || ''));
     }
     const editable = ri >= 0 && ci >= 0 && this.data.canEditCell(ri, ci);
-    this.inputEl.disabled(!editable || this.data.settings.mode === 'read');
+    this.inputEl.disabled(this.data.settings.mode !== 'read' && !editable);
   }
 }
