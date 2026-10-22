@@ -39,7 +39,7 @@ function App() {
     }
     function render(showHidden=hidden) {
         if(!container.current) return;
-        const visible = sheets.current.filter((_,i)=>showHidden || (info.current?.sheets[i]?.state ?? 'visible')==='visible');
+        const visible = sheets.current.filter((_,i)=>showHidden || (info.current?.sheets?.[i]?.state ?? 'visible')==='visible');
         displayed.current = visible;
         if(!visible.length) {setError('No visible sheets. Enable Show hidden sheets.'); return;}
         const spreadsheet = grid.current ?? new Spreadsheet(container.current,{
@@ -127,7 +127,7 @@ function App() {
             <button onClick={()=>handler.emit('openDesktop')}>Open in desktop app</button>
         </header>
         <section className="preview-status" role="status">{status}
-            {!!info.current?.sheets.some((s:any)=>s.state!=='visible')&&<label><input type="checkbox" checked={hidden} onChange={e=>{setHidden(e.target.checked);render(e.target.checked);}}/>Show hidden sheets</label>}
+            {!!info.current?.sheets?.some((s:any)=>s.state!=='visible')&&<label><input type="checkbox" checked={hidden} onChange={e=>{setHidden(e.target.checked);render(e.target.checked);}}/>Show hidden sheets</label>}
             <label>Zoom <select aria-label="Zoom" defaultValue="1" onChange={e=>{const g:any=grid.current;if(g){g.data.setZoomScale(Number(e.target.value));g.reRender();}}}>{[0.5,0.75,1,1.25,1.5,2].map(z=><option key={z} value={z}>{z*100}%</option>)}</select></label>
         </section>
         {!!warnings.length&&<details className="preview-warnings"><summary>Workbook details ({warnings.length})</summary>{warnings.map((w,i)=><p key={i}>{w}</p>)}</details>}

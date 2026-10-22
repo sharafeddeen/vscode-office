@@ -44,6 +44,13 @@ export async function run(){
     const calculated:any=await wait(()=>{if(missingSession.lastStatus?.includes('unavailable:'))throw new Error(missingSession.lastStatus);return missingSession.calculation;},'native result render',120000);
     assert.equal(calculated.sheets[0].cells['4:7'],'OK');
 
+    const csv=vscode.Uri.file(join(folder,'literal.csv'));
+    await vscode.commands.executeCommand('vscode.openWith',csv,api.viewType);
+    const csvSession=await wait(()=>api.sessions.get(csv.toString()),'CSV session');
+    const csvRender:any=await bounded(csvSession.ready,'CSV preview render');
+    assert.ok(!csvRender.error,csvRender.error);
+    assert.equal(csvRender.sheets[0].cells['0:0'],'=ABS(-1)');
+
     const original=process.env.AHMED_ORIGINAL_WORKBOOK;
     let originalVerified=false;
     if(original){
