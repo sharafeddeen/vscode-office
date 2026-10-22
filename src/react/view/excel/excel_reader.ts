@@ -299,6 +299,7 @@ const convertExcelJsWorkbook = (
 
         sheets.push({
             name: worksheet.name,
+            state: worksheet.state,
             rows: converted.rows,
             cols: converted.cols,
             ...(converted.styles ? { styles: converted.styles } : {}),
@@ -340,7 +341,7 @@ const loadWithExcelJs = async (buffer: ArrayBuffer): Promise<ExcelData> => {
                 cell.date1904 = info.date1904;
                 const address = XLSX.utils.encode_cell({r:Number(ri),c:Number(ci)});
                 const result = results[sheet.name!]?.[address];
-                if (result && (cell.formulaPreview || (cell.numFmt && result.type === 'n'))) {cell.savedValue=result.value;cell.savedType=result.type;cell.hasSavedValue=true;}
+                if (result) {cell.savedValue=result.value;cell.savedType=result.type;cell.hasSavedValue=true;}
             }
         }
     }

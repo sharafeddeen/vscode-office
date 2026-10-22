@@ -1,8 +1,8 @@
 {
   "name": "ahmed-spreadsheet-viewer",
   "displayName": "Ahmed Spreadsheet Viewer",
-  "description": "Read-only spreadsheets with saved formula results and native recalculation.",
-  "version": "0.1.0",
+  "description": "Office Viewer spreadsheet editing, saved formula results and native recalculation.",
+  "version": "0.1.1",
   "publisher": "sharafeddeen",
   "icon": "image/logo.png",
   "engines": {

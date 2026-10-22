@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { handler } from "../../util/vscode";
 import * as XLSX from 'xlsx';
 import Spreadsheet from './x-spreadsheet/index';
-import type { RowData, SheetData } from './x-spreadsheet/index';
+import type { CellData, RowData, SheetData } from './x-spreadsheet/index';
 import { CsvEncoding, encodeCsvText } from './csvEncoding';
 import { DEFAULT_ROW_HEIGHT_PX, freezeExprToExcelView, pxToExcelRowHeight } from './excel_meta';
 import { patchWorksheetSortStateXml } from './excel_sort_state';
@@ -38,7 +38,15 @@ function pxToExcelColWidth(px: number) {
     return Math.max((px - 5) / 7, 0);
 }
 
-function setCellValue(cell: ExcelJS.Cell, text: string) {
+function setCellValue(cell: ExcelJS.Cell, data: CellData) {
+    const text=data.text ?? '';
+    if(data.previewCell && data.hasSavedValue) {
+        const result=data.savedType==='e' ? {error:data.savedValue} : data.savedValue;
+        if(data.formulaPreview)cell.value={formula:text.slice(1),result} as any;
+        else cell.value=result as any;
+        return;
+    }
+    if(data.previewCell && !data.formulaPreview && text.startsWith('=')){cell.value=text;return;}
     if (!text) {
         cell.value = null;
         return;
@@ -116,10 +124,12 @@ async function writeSheetToExcelJs(worksheet: ExcelJS.Worksheet, workbook: Excel
             if (hl?.link) {
                 writeCellHyperlink(excelCell, cellData.text ?? '', hl);
             } else {
-                setCellValue(excelCell, cellData.text ?? '');
+                setCellValue(excelCell, cellData);
+                if(cellData.comment)excelCell.note=cellData.comment;
             }
             if (cellData.style != null && styles[cellData.style]) {
                 applySpreadsheetStyle(excelCell, styles[cellData.style]);
+                if(cellData.numFmt && cellData.numFmtFormat===styles[cellData.style].format)excelCell.numFmt=cellData.numFmt;
             }
         }
     }
@@ -148,16 +158,22 @@ async function patchWorkbookSortStates(buffer: Uint8Array, sheets: SheetData[]) 
     return new Uint8Array(await zip.generateAsync({ type: 'uint8array' }));
 }
 
-async function exportWithExcelJs(sheets: SheetData[], options?: ExportOptions) {
+export async function buildXlsx(sheets: SheetData[]) {
     const workbook = new ExcelJS.Workbook();
+    workbook.properties.date1904=sheets.some(s=>Object.values(s.rows ?? {}).some((r:any)=>Object.values(r?.cells ?? {}).some((c:any)=>c.date1904)));
+    workbook.calcProperties.fullCalcOnLoad=true;
     for (let i = 0; i < sheets.length; i += 1) {
         const sheetData = sheets[i];
-        const worksheet = workbook.addWorksheet(sheetData.name || `Sheet${i + 1}`);
+        const worksheet = workbook.addWorksheet(sheetData.name || `Sheet${i + 1}`,{state:sheetData.state ?? 'visible'});
         await writeSheetToExcelJs(worksheet, workbook, sheetData);
     }
     const buffer = new Uint8Array(await workbook.xlsx.writeBuffer());
     const patched = await patchWorkbookSortStates(buffer, sheets);
-    await emitSave(patched, options);
+    return patched;
+}
+
+async function exportWithExcelJs(sheets:SheetData[],options?:ExportOptions) {
+    await emitSave(await buildXlsx(sheets),options);
 }
 
 function applyColWidths(ws: XLSX.WorkSheet, xws: SheetData) {
@@ -189,6 +205,15 @@ function dataToSheetJs(xws: SheetData) {
         }
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
+    for(const [ri,row] of Object.entries(rowobj)) {
+        if(!isRowData(row as any))continue;
+        for(const [ci,data] of Object.entries((row as RowData).cells ?? {})) {
+            const cell:any=ws[XLSX.utils.encode_cell({r:Number(ri),c:Number(ci)})];
+            if(!cell)continue;
+            if(data.formulaPreview){cell.f=data.text.slice(1);if(data.hasSavedValue){cell.v=data.savedValue;cell.t=data.savedType==='str'?'s':(data.savedType ?? 'n');}else delete cell.v;}
+            else if(data.hasSavedValue){cell.v=data.savedValue;cell.t=data.savedType==='str'?'s':(data.savedType ?? 'n');}
+        }
+    }
     applyColWidths(ws, xws);
     return ws;
 }
@@ -257,4 +282,14 @@ export async function export_xlsx(
         const bytes = encodeCsvText(csvContent, csvEncoding);
         handler.emit('save', [...bytes]);
     }
+}
+
+// Shared by VS Code's Save/backup lifecycle and native calculation of current edits.
+export async function serializeSpreadsheet(sheets:SheetData[],ext='xlsx',encoding:CsvEncoding='utf8',delimiter=','):Promise<Uint8Array> {
+    ext=ext.replace(/^\./,'').toLowerCase();
+    if(ext==='xlsx'||ext==='xlsm')return buildXlsx(sheets);
+    if(ext==='csv'||ext==='tsv')return encodeCsvText(XLSX.utils.sheet_to_csv(dataToSheetJs(sheets[0]),{FS:ext==='tsv'?'\t':delimiter}),encoding);
+    const workbook=XLSX.utils.book_new();
+    sheets.forEach((s,i)=>XLSX.utils.book_append_sheet(workbook,dataToSheetJs(s),s.name || 'Sheet'+(i+1)));
+    return new Uint8Array(XLSX.write(workbook,{bookType:ext as XLSX.BookType,type:'array'}));
 }

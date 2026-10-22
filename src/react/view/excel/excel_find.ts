@@ -26,7 +26,7 @@ function cellMatches(cellText: string, query: string, options: FindOptions): boo
 
 function iterSheetCells(
     sheet: SheetData,
-    cb: (ri: number, ci: number, text: string) => void,
+    cb: (ri: number, ci: number, text: string, saved?:string) => void,
 ) {
     const rows = sheet.rows;
     if (!rows?.len) return;
@@ -37,8 +37,8 @@ function iterSheetCells(
             const ci = Number(ciKey);
             if (Number.isNaN(ci)) continue;
             const cell = row.cells[ci];
-            const text = (cell?.text ?? '') + (cell?.hasSavedValue ? '\n' + String(cell.savedValue) : '');
-            if (text) cb(ri, ci, text);
+            const text = cell?.text ?? '';
+            cb(ri, ci, text, cell?.hasSavedValue ? String(cell.savedValue) : undefined);
         }
     }
 }
@@ -64,8 +64,8 @@ export function findAllInSheets(
         const sheetIndex = indices[i];
         const sheet = sheets[sheetIndex];
         if (!sheet) continue;
-        iterSheetCells(sheet, (ri, ci, text) => {
-            if (cellMatches(text, query, options)) {
+        iterSheetCells(sheet, (ri, ci, text, saved) => {
+            if (cellMatches(text, query, options) || (saved!==undefined && cellMatches(saved,query,options))) {
                 matches.push({ sheetIndex, ri, ci });
             }
         });
@@ -113,7 +113,7 @@ export function replaceCellText(
     replaceText: string,
     options: FindOptions,
 ): boolean {
-    const sheet = sheets[sheetIndexSafe(sheets, match.sheetIndex)];
+    const sheet = sheetIndexSafe(sheets, match.sheetIndex);
     const row = sheet?.rows?.[match.ri];
     if (!row || typeof row !== 'object' || !('cells' in row)) return false;
     const cell = row.cells?.[match.ci];

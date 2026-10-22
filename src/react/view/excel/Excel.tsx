@@ -16,6 +16,8 @@ import FindReplacePanel, { type FindReplacePanelHandle } from './FindReplacePane
 import { parseSpreadsheetLink } from './excel_hyperlink';
 import { initExcelLocale, t } from './excel_i18n';
 
+import { useSpreadsheetFeatures } from '../../../spreadsheet/features';
+
 initExcelLocale();
 
 type ExcelColorMode = 'adaptive' | 'light';
@@ -101,6 +103,7 @@ function isCsvLikeExt(ext: string): boolean {
 }
 
 function ExcelViewer() {
+    const spreadsheetFeatures = useSpreadsheetFeatures();
     const { message, modal } = App.useApp();
     const [loading, setLoading] = useState(true)
     const [colorMode, setColorMode] = useState(loadExcelColorMode)
@@ -169,7 +172,7 @@ function ExcelViewer() {
         spreadSheet.autoFitColumns();
         if (!readOnlyRef.current) {
             spreadSheet.setSaveEnabled(true);
-            handler.emit('change');
+            spreadsheetFeatures.changed();
         }
         message.success({ duration: 1.5, content: t('viewer.autoFitDone'), className: 'excel-save-success-message' });
     }, [message]);
@@ -258,7 +261,6 @@ function ExcelViewer() {
 
         try {
             await export_xlsx(spreadSheet, extRef.current, csvEncoding, undefined, csvDelimiter);
-            spreadSheet.setSaveEnabled(false);
         } catch (error) {
             console.error(`Failed to save Excel file: ${(error as Error).message}`);
         }
@@ -270,9 +272,6 @@ function ExcelViewer() {
         setSaveAsVisible(false);
         try {
             await exportSaveAs(spreadSheet, fmt, csvEncodingRef.current, csvDelimiterRef.current);
-            if (!readOnlyRef.current) {
-                spreadSheet.setSaveEnabled(false);
-            }
         } catch (error) {
             console.error(`Failed to save Excel file: ${(error as Error).message}`);
         }
@@ -323,7 +322,7 @@ function ExcelViewer() {
             if (payload.ext?.match(/csv/i)) {
                 csvEncodingRef.current = detectCsvEncoding(buffer);
             }
-            const { sheets, maxLength, maxCols, csvDelimiter } = await loadSheets(buffer, payload.ext);
+            const { sheets, maxLength, maxCols, csvDelimiter, warnings } = await loadSheets(buffer, payload.ext);
             if (csvDelimiter) {
                 csvDelimiterRef.current = csvDelimiter;
             }
@@ -352,7 +351,7 @@ function ExcelViewer() {
                 showEditInVSCode: isCsvLikeExt(payload.ext ?? ''),
                 row: { len: viewRowLen, height: 30 },
                 col: { len: viewColLen },
-                view: { height: () => window.innerHeight - 2 },
+                view: { height: () => window.innerHeight - 34 },
             });
             spreadSheetRef.current = spreadSheet;
             setActiveSpreadsheet(spreadSheet);
@@ -398,7 +397,7 @@ function ExcelViewer() {
             spreadSheet.on('change', () => {
                 if (!fileReadOnly) {
                     spreadSheet.setSaveEnabled(true);
-                    handler.emit('change');
+                    spreadsheetFeatures.changed();
                 }
             });
             const savedView = loadViewState(documentCacheIdRef.current);
@@ -408,9 +407,11 @@ function ExcelViewer() {
                 });
             }
             initialFormattingRef.current = buildFormattingSnapshot(spreadSheet.getData());
+            spreadsheetFeatures.loaded(spreadSheet, {...payload,csvEncoding:csvEncodingRef.current,csvDelimiter:csvDelimiterRef.current}, warnings);
         };
 
         handler.on("open", (payload) => {
+            setLoadError('');setLoading(true);
             extRef.current = payload.ext ?? '';
             documentCacheIdRef.current = payload.documentCacheId ?? '';
             const fileReadOnly = payload.readOnly === true;
@@ -423,16 +424,19 @@ function ExcelViewer() {
                     const msg = (e as Error).message || String(e);
                     console.error(`Failed to load Excel file: ${msg}`, e);
                     setLoadError(msg);
+                    spreadsheetFeatures.error(msg);
                     setLoading(false);
                 }
             }).catch(error => {
                 const msg = (error as Error).message || String(error);
                 console.error(`Failed to load Excel file: ${msg}`, error);
                 setLoadError(msg);
+                spreadsheetFeatures.error(msg);
                 setLoading(false);
             });
         }).on("saveDone", () => {
-        }).emit("init")
+            spreadSheetRef.current?.setSaveEnabled(false);
+        }).on("loadError", (message) => {setLoadError(message);setLoading(false);spreadsheetFeatures.error(message);}).emit("init")
 
         let themeTimer: ReturnType<typeof setTimeout>;
         const themeObserver = new MutationObserver(() => {
@@ -525,6 +529,7 @@ function ExcelViewer() {
                 </div>
             </Modal>
             <div id='container'></div>
+            {spreadsheetFeatures.bar}
             {!loading && !loadError && (
                 <button
                     type="button"

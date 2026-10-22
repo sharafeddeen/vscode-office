@@ -622,12 +622,14 @@ export default class DataProxy {
   undo() {
     this.history.undo(this.getData(), (d) => {
       this.setData(d);
+      this.change(this.getData());
     });
   }
 
   redo() {
     this.history.redo(this.getData(), (d) => {
       this.setData(d);
+      this.change(this.getData());
     });
   }
 
@@ -1407,14 +1409,15 @@ export default class DataProxy {
     if (!this.canEditCell(ri, ci)) return;
     const nri = getDataRowIndex(this, ri);
     const { rows, history, validations } = this;
-    if (state === 'finished') {
-      rows.setCellText(nri, ci, '');
-      history.add(this.getData());
-      rows.setCellText(nri, ci, text);
-    } else {
-      rows.setCellText(nri, ci, text);
-      this.change(this.getData());
+    if (!this.textEditSnapshot || this.textEditSnapshot.ri !== nri || this.textEditSnapshot.ci !== ci) {
+      this.textEditSnapshot = { ri: nri, ci, data: JSON.stringify(this.getData()) };
     }
+    if (state === 'finished') {
+      history.add(JSON.parse(this.textEditSnapshot.data));
+      this.textEditSnapshot = null;
+    }
+    rows.setCellText(nri, ci, text);
+    this.change(this.getData());
     validations.validate(nri, ci, text);
   }
 
@@ -1725,6 +1728,7 @@ export default class DataProxy {
     } = this;
     const data = {
       name,
+      state: this.state || 'visible',
       freeze: xy2expr(freeze[1], freeze[0]),
       styles,
       merges: merges.getData(),

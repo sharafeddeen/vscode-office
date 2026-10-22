@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
+import {createHash} from 'node:crypto';
+const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 
 async function wait<T>(read:()=>T|undefined,label:string,timeout=60000):Promise<T>{
     const start=Date.now();
@@ -28,11 +30,35 @@ export async function run(){
     assert.equal(rendered.warnings?.length ?? 0,0,'Primary reader must preserve formatting in the browser');
     assert.ok(rendered.canvasCount>0,'Real canvas created in webview');
     assert.equal(rendered.sheets.length,3);
+    assert.equal(rendered.toolbarCount,1);assert.ok(rendered.toolbarButtons>20);assert.equal(rendered.formulaBarCount,1);assert.ok(rendered.editable);assert.ok(rendered.themeToggle);
     assert.equal(rendered.sheets[0].cells['4:7'],'OK');
     assert.equal(rendered.sheets[0].cells['4:6'],'100%');
     assert.equal(rendered.sheets[0].cells['9:0'],'');
     assert.equal(rendered.sheets[0].cells['10:0'],'#N/A');
 
+
+    const before=hash(await fs.readFile(saved.fsPath));
+    const matches=await session.action({action:'find',text:'Heat allocation'});assert.equal(matches.matches.length,1);
+    const edited=await session.action({action:'edit',ri:4,ci:1,text:'0.5'});
+    assert.equal(edited.sheets[0].cells['4:1'],'0.5');assert.equal(edited.sheets[0].cells['4:7'],'Not calculated');
+    await wait(()=>session.isDirty(),'VS Code dirty state');
+    assert.equal(hash(await fs.readFile(saved.fsPath)),before,'Editing cannot save implicitly');
+    const undo=await session.action({action:'undo'});assert.equal(undo.sheets[0].cells['4:1'],'0.4');
+    const redo=await session.action({action:'redo'});assert.equal(redo.sheets[0].cells['4:1'],'0.5');
+    const bold=await session.action({action:'bold',ri:4,ci:1});
+    const cell=bold.data[0].rows['4'].cells['1'];assert.ok(bold.data[0].styles[cell.style].font.bold);
+    const themed=await session.action({action:'theme'});assert.equal(typeof themed.theme,'boolean');
+    await session.recalculate();
+    const editedCalc:any=await wait(()=>session.calculation,'edited calculation',120000);
+    assert.equal(editedCalc.sheets[0].cells['4:7'],'FAIL','Recalculation uses unsaved inputs');
+    await vscode.commands.executeCommand('workbench.action.files.save');
+    await wait(()=>!session.isDirty(),'save acknowledgement');
+    assert.notEqual(hash(await fs.readFile(saved.fsPath)),before);
+    const copy=vscode.Uri.file(join(folder,'edited-copy.xlsx'));await session.saveAs(copy);assert.ok((await fs.stat(copy.fsPath)).size>0);
+    const replaced=await session.action({action:'replace',find:'Heat allocation',replace:'Edited title'});
+    assert.equal(replaced.sheets[0].cells['0:0'],'Edited title');
+    // Discard this final test-only edit through VS Code's revert lifecycle.
+    await vscode.commands.executeCommand('workbench.action.files.revert');
     const missing=vscode.Uri.file(join(folder,'missing.xlsx'));
     await vscode.commands.executeCommand('vscode.openWith',missing,api.viewType);
     const missingSession=await wait(()=>api.sessions.get(missing.toString()),'missing-result webview session');
@@ -63,7 +89,7 @@ export async function run(){
         assert.equal(data.sheets.find((s:any)=>s.name==='QUICK_SPLITS').cells['4:7'],'OK');
         originalVerified=true;
     }
-    await fs.writeFile(join(folder,'result.json'),JSON.stringify({webview:true,canvas:true,sheets:true,savedResults:true,missingResults:true,nativeCalculation:true,originalVerified},null,2));
+    await fs.writeFile(join(folder,'result.json'),JSON.stringify({webview:true,canvas:true,sheets:true,savedResults:true,missingResults:true,nativeCalculation:true,toolbar:true,editing:true,undoRedo:true,formatting:true,findReplace:true,saving:true,originalVerified},null,2));
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     console.log('Actual VS Code webview integration checks passed.');
 }

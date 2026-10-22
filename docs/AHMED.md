@@ -11,12 +11,16 @@ npm ci --no-audit --no-fund
 npm test
 npm run build
 npm run package
-code --install-extension ahmed-spreadsheet-viewer-0.1.0.vsix --force
+code --install-extension ahmed-spreadsheet-viewer-0.1.1.vsix --force
 ```
 
 Reload VS Code. For a spreadsheet, select **Reopen Editor With → Ahmed Spreadsheet Viewer**. The extension ID is `sharafeddeen.ahmed-spreadsheet-viewer`; it is independent of the Marketplace extension. Existing Markdown, PDF, themes and other editor associations are untouched.
 
-The preview is read only. Select cells to inspect their original formulas and comments. Use sheet tabs, Find, zoom, **Show hidden sheets**, **Recalculate**, **Cancel**, or **Open in desktop app**. Copying cells copies their displayed results.
+Version 0.1.1 restores the complete upstream spreadsheet interface: formatting toolbar, editable cells and formula bar, undo/redo, clipboard, find/replace, Save/Save As, sheet operations, auto-fit, context menus and light/adaptive theme controls. There is one formula bar. Recalculation, zoom, comment inspection and desktop-app actions live in a compact status bar below the workbook. All imported sheets have tabs, including hidden sheets; their original visibility state is preserved when exported.
+
+Ordinary writable files open in edit mode. VS Code tracks unsaved changes, prompts on close, and supports save, revert and backup. Disk changes are checked before overwriting. Read-only resources and XLSM files open in read mode with Save As available; the XLSX exporter cannot preserve VBA projects. For CSV/TSV, the upstream text-editor action remains available.
+
+Changing cell content or structure invalidates formula caches throughout the workbook, including cross-sheet results. Formatting alone retains results. **Recalculate** uses the current unsaved grid when there are edits. Its results stay in memory until you save. Copying cells copies displayed values. Saving/exporting preserves formulas and available results, number formats, ordinary comments and hidden-sheet state in the supported grid model.
 
 ## Values and calculation
 
@@ -30,11 +34,11 @@ Settings:
 - `ahmedSpreadsheet.autoCalculateMissing`: defaults to true.
 - `ahmedSpreadsheet.timeoutSeconds`: defaults to 90.
 
-Backend executable settings are machine-scoped. Recalculation requires workspace trust. Native workers operate on extension-owned temporary copies, disable macros, and disable external-link refresh. The original workbook is never saved. Results are cached in VS Code's extension global storage by source hash, backend identity/version (binary fingerprint on Windows) and cache format version. Explicit recalculation bypasses the cache. **Ahmed Spreadsheet Viewer: Clear calculation cache** removes only that extension-owned cache.
+Backend executable settings are machine-scoped. Recalculation requires workspace trust. Native workers operate on extension-owned temporary copies, disable macros, and disable external-link refresh. Calculation never saves the original workbook. The editor writes a workbook only through the normal Save/Save As lifecycle (including VS Code Auto Save if you enable it). Results are cached in VS Code's extension global storage by source hash, backend identity/version (binary fingerprint on Windows) and cache format version. Explicit recalculation bypasses the cache. **Ahmed Spreadsheet Viewer: Clear calculation cache** removes only that extension-owned cache.
 
 LibreOffice uses an isolated profile per job under a short OS-temp path, avoiding native Windows path limits. Excel uses a separate automation instance and records its owned process for cancellation cleanup. Process arguments are passed as arrays rather than constructed shell commands. A timeout/cancellation terminates the job and cleans its temporary files. Excel support requires a registered Excel automation server; it cannot be validated on machines without Excel.
 
-Only calculated values are overlaid onto the original preview. A backend's rewritten workbook is not substituted for the source's styles, formulas, comments or layout. A native engine may implement some Excel formulas differently; the UI identifies the engine used. Macros, add-in functions, missing external dependencies and encrypted workbooks may need the desktop application.
+For an unedited workbook, only calculated values are overlaid onto the original preview. A backend's rewritten workbook is not substituted for the source's styles, formulas, comments or layout. Recalculating edited grids exports their supported cells/styles to a temporary XLSX; advanced features such as named ranges outside the grid export model require the desktop application. A native engine may implement some Excel formulas differently; the UI identifies the engine used. Macros, add-in functions, missing external dependencies and encrypted workbooks may need the desktop application.
 
 ## Import and rendering
 
@@ -52,7 +56,7 @@ Compatibility boundaries:
 | Threaded comments | Disclosed, not rendered |
 | External links | Saved results only; links are not refreshed |
 | Conditional formatting | Not an Excel-equivalent rendering engine; use desktop app for exact visual validation |
-| Editing/round-trip saving | Outside this fork's read-only contract |
+| Editing/round-trip saving | Upstream grid export; advanced OOXML features outside its model may be lost. Use Save As or the desktop app for complex workbooks |
 | Password-encrypted/corrupt files | Explicit loading error and desktop-app action |
 
 ## Tests
@@ -67,9 +71,9 @@ npm run test:integration
 npm run test:corpus -- /absolute/path/to/external/workbook/directory
 ```
 
-Unit tests generate synthetic workbooks with arbitrary comment paths, relative/absolute targets, hidden sheets, formatting, cross-sheet formulas, cached errors, false/zero/empty values, and missing results. They check untouched source bytes and worksheet XML, plus cancellation and invalid packages.
+Unit tests generate synthetic workbooks with arbitrary comment paths, relative/absolute targets, hidden sheets, formatting, cross-sheet formulas, cached errors, false/zero/empty values, and missing results. They check untouched source bytes and worksheet XML, plus cancellation, invalid packages, edit invalidation and save/reopen fidelity for supported values and formatting.
 
-Native tests require a backend and fail if requested but unavailable. Integration tests launch an isolated VS Code profile and verify the actual webview/canvas, saved results, missing-result display, and recalculated results. Set `VSCODE_EXECUTABLE` to use a particular Code executable. Set `AHMED_ORIGINAL_WORKBOOK` to additionally exercise an external workbook with six sheets and `QUICK_SPLITS!H5 = OK`; that workbook is never copied into Git.
+Native tests require a backend and fail if requested but unavailable. Integration tests launch an isolated VS Code profile and verify the actual webview/canvas, saved results, missing-result display, recalculated results, the full toolbar, formula-bar edits, undo/redo, formatting, find/replace, saving, Save As and revert. Set `VSCODE_EXECUTABLE` to use a particular Code executable. Set `AHMED_ORIGINAL_WORKBOOK` to additionally exercise an external workbook with six sheets and `QUICK_SPLITS!H5 = OK`; that workbook is never copied into Git.
 
 Corpus verification reads external XLSX files, checks sheet identity, result rendering and source hashes, and writes a local ignored `.cache/corpus-report.json`. No customer workbooks or corpus reports belong in the public fork or release package.
 

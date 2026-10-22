@@ -162,6 +162,7 @@ export interface SheetBackgroundImage {
 }
 
 export interface SheetData {
+    state?: 'visible' | 'hidden' | 'veryHidden';
     name?: string;
     freeze?: string;
     autofilter?: SheetAutofilterData;
@@ -550,11 +551,12 @@ export class Spreadsheet {
     }
 
     replaceAt(match: FindMatch, findText: string, replaceText: string, options: FindOptions = {}): boolean {
-        const sheets = this.getData();
+        const sheets = JSON.parse(JSON.stringify(this.getData()));
         const changed = replaceCellText(sheets, match, findText, replaceText, options);
         if (changed) {
             const data = this.datas[match.sheetIndex];
             if (data) {
+                data.history.add(data.getData());
                 data.setData(sheets[match.sheetIndex]);
                 if (match.sheetIndex === this.getActiveSheetIndex()) {
                     this.sheet.resetData(data);
@@ -566,10 +568,11 @@ export class Spreadsheet {
     }
 
     replaceAll(findText: string, replaceText: string, options: FindOptions = {}): number {
-        const sheets = this.getData();
+        const sheets = JSON.parse(JSON.stringify(this.getData()));
         const count = replaceAllInSheets(sheets, findText, replaceText, options, this.getActiveSheetIndex());
         if (count > 0) {
             for (let i = 0; i < this.datas.length; i += 1) {
+                this.datas[i].history.add(this.datas[i].getData());
                 this.datas[i].setData(sheets[i]);
             }
             this.sheet.resetData(this.data);

@@ -1,3 +1,12 @@
+# Ahmed Spreadsheet Viewer 0.1.1
+
+- Restore the full upstream spreadsheet interface, toolbar, editing, formatting, find/replace and theme controls.
+- Replace the duplicate formula row with a compact calculation/status bar below the workbook.
+- Integrate VS Code save, unsaved-change tracking, revert and backup, with disk conflict checks.
+- Invalidate formula caches after content edits and recalculate the current unsaved workbook.
+- Preserve supported formulas, results, number formats, comments, value types and hidden-sheet state when exporting XLSX.
+- Fix inherited undo history and find/replace sheet selection; test the actual webview editing/save flow.
+
 # Ahmed Spreadsheet Viewer 0.1.0
 
 - Independently identified, read-only spreadsheet provider.
