@@ -189,6 +189,7 @@ function ExcelViewer() {
             return;
         }
 
+        if(spreadsheetFeatures.native()){handler.emit('nativeSave');return;}
         const ext = extRef.current.replace(/^\./, '').toLowerCase();
         const sheets = spreadSheet.getData();
         const csvEncoding = csvEncodingRef.current;
@@ -270,6 +271,7 @@ function ExcelViewer() {
         const spreadSheet = spreadSheetRef.current;
         if (!spreadSheet) return;
         setSaveAsVisible(false);
+        if(spreadsheetFeatures.native()){handler.emit('nativeSaveAs',{ext:fmt});return;}
         try {
             await exportSaveAs(spreadSheet, fmt, csvEncodingRef.current, csvDelimiterRef.current);
         } catch (error) {

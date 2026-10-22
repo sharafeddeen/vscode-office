@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import JSZip from 'jszip';
+import {readResults} from '../../src/spreadsheet/results';
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 
 async function wait<T>(read:()=>T|undefined,label:string,timeout=60000):Promise<T>{
@@ -43,8 +45,8 @@ export async function run(){
     assert.equal(edited.sheets[0].cells['4:1'],'0.5');assert.equal(edited.sheets[0].cells['4:7'],'Not calculated');
     await wait(()=>session.isDirty(),'VS Code dirty state');
     assert.equal(hash(await fs.readFile(saved.fsPath)),before,'Editing cannot save implicitly');
-    const undo=await session.action({action:'undo'});assert.equal(undo.sheets[0].cells['4:1'],'0.4');
-    const redo=await session.action({action:'redo'});assert.equal(redo.sheets[0].cells['4:1'],'0.5');
+    const undo=await session.action({action:'undo'});assert.ok(!undo.error,undo.error);assert.equal(Number(undo.sheets[0].cells['4:1']),0.4);
+    const redo=await session.action({action:'redo'});assert.ok(!redo.error,redo.error);assert.equal(Number(redo.sheets[0].cells['4:1']),0.5);
     const bold=await session.action({action:'bold',ri:4,ci:1});
     const cell=bold.data[0].rows['4'].cells['1'];assert.ok(bold.data[0].styles[cell.style].font.bold);
     const themed=await session.action({action:'theme'});assert.equal(typeof themed.theme,'boolean');
@@ -70,6 +72,38 @@ export async function run(){
     const calculated:any=await wait(()=>{if(missingSession.lastStatus?.includes('unavailable:'))throw new Error(missingSession.lastStatus);return missingSession.calculation;},'native result render',120000);
     assert.equal(calculated.sheets[0].cells['4:7'],'OK');
 
+    const nativeUri=vscode.Uri.file(join(folder,'native.xlsx'));
+    await vscode.commands.executeCommand('vscode.openWith',nativeUri,api.viewType);
+    const nativeSession=await wait(()=>api.sessions.get(nativeUri.toString()),'native document session');
+    const nativeReady:any=await bounded(nativeSession.ready,'native document');
+    assert.ok(nativeReady.nativeEditing);
+    const nativeSourceHash=hash(await fs.readFile(nativeUri.fsPath));
+    const nativeEdit=await nativeSession.action({action:'edit',sheetIndex:1,ri:0,ci:0,text:'0.9'});
+    assert.ok(!nativeEdit.error,nativeEdit.error);
+    await nativeSession.recalculate();
+    await wait(()=>nativeSession.calculation?.revision===nativeEdit.revision?nativeSession.calculation:undefined,'native named-range recalculation');
+    assert.equal(nativeSession.calculation.sheets[0].cells['1:9'],100);
+    assert.equal(nativeSession.calculation.sheets[0].cells['2:11'],2);
+    assert.equal(nativeSession.calculation.sheets[0].cells['3:11'],3);
+    assert.equal(hash(await fs.readFile(nativeUri.fsPath)),nativeSourceHash);
+    const dateEdit=await nativeSession.action({action:'edit',sheetIndex:0,ri:2,ci:14,text:'2024-02-01'});
+    await nativeSession.recalculate();
+    const dated:any=await wait(()=>nativeSession.calculation?.revision===dateEdit.revision?nativeSession.calculation:undefined,'native date formatting');
+    assert.equal(typeof dated.sheets[0].cells['2:14'],'string','Native date formatting is displayed');
+    const undoDate=await nativeSession.action({action:'undo'});
+    assert.ok(!undoDate.error,undoDate.error);assert.ok(!undoDate.sheets[0].cells['2:14'],'Undo removes the actual input, not a display-format refresh');
+    const inserted=await nativeSession.action({action:'nativeOperation',command:{action:'insertRows',sheet:1,index:0,count:1}});
+    assert.ok(!inserted.error,inserted.error);assert.equal(inserted.sheets[0].cells['1:9'],100);
+    assert.ok((await nativeSession.nativeInspect()).names.includes('Efficiency'));
+    await nativeSession.cancel();
+    assert.ok((await nativeSession.nativeInspect()).names.includes('Efficiency'),'Reconnect from the native recovery checkpoint');
+    await nativeSession.save();
+    const nativeBytes=new Uint8Array(await fs.readFile(nativeUri.fsPath)),savedNative=await JSZip.loadAsync(nativeBytes);
+    assert.match(await savedNative.file('xl/workbook.xml').async('string'),/name="Efficiency"/);
+    assert.match(await savedNative.file('xl/worksheets/sheet1.xml').async('string'),/conditionalFormatting/);
+    assert.equal((await readResults(nativeBytes)).QUICK_SPLITS.J2.value,100);
+    const ods=vscode.Uri.file(join(folder,'native-copy.ods'));await nativeSession.saveAs(ods);
+    assert.ok((await JSZip.loadAsync(await fs.readFile(ods.fsPath))).file('content.xml'));
     const csv=vscode.Uri.file(join(folder,'literal.csv'));
     await vscode.commands.executeCommand('vscode.openWith',csv,api.viewType);
     const csvSession=await wait(()=>api.sessions.get(csv.toString()),'CSV session');
@@ -89,7 +123,7 @@ export async function run(){
         assert.equal(data.sheets.find((s:any)=>s.name==='QUICK_SPLITS').cells['4:7'],'OK');
         originalVerified=true;
     }
-    await fs.writeFile(join(folder,'result.json'),JSON.stringify({webview:true,canvas:true,sheets:true,savedResults:true,missingResults:true,nativeCalculation:true,toolbar:true,editing:true,undoRedo:true,formatting:true,findReplace:true,saving:true,originalVerified},null,2));
+    await fs.writeFile(join(folder,'result.json'),JSON.stringify({webview:true,canvas:true,sheets:true,savedResults:true,missingResults:true,nativeCalculation:true,toolbar:true,editing:true,undoRedo:true,formatting:true,findReplace:true,saving:true,nativeNames:true,nativeArrays:true,nativeStructure:true,nativeRecovery:true,originalVerified},null,2));
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     console.log('Actual VS Code webview integration checks passed.');
 }

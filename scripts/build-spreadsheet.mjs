@@ -7,4 +7,5 @@ await bundle({entryPoints:['src/spreadsheet/extension.ts'],outfile:'out/extensio
 await vite({configFile:false,root:process.cwd(),base:'./',define:{global:'globalThis'},resolve:{alias:{stream:resolve('src/react/shims/nodeStream.ts'),util:resolve('src/react/shims/nodeUtil.ts')}},build:{outDir:'out/webview',emptyOutDir:true,rollupOptions:{input:resolve('spreadsheet.html')},chunkSizeWarningLimit:2048}});
 await mkdir('out/backend', {recursive:true});
 await copyFile('src/spreadsheet/recalculate-excel.ps1','out/backend/recalculate-excel.ps1');
+await copyFile('src/spreadsheet/uno-worker.py','out/backend/uno-worker.py');
 console.log('Ahmed Spreadsheet Viewer built.');

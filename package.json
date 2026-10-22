@@ -2,7 +2,7 @@
   "name": "ahmed-spreadsheet-viewer",
   "displayName": "Ahmed Spreadsheet Viewer",
   "description": "Office Viewer spreadsheet editing, saved formula results and native recalculation.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "sharafeddeen",
   "icon": "image/logo.png",
   "engines": {
@@ -91,7 +91,7 @@
           ],
           "default": "auto",
           "scope": "machine",
-          "description": "Native calculation backend. Auto prefers Excel on Windows, then LibreOffice."
+          "description": "Auto uses persistent LibreOffice UNO editing when available. Excel remains a read-only preview calculation fallback."
         },
         "ahmedSpreadsheet.libreOfficePath": {
           "type": "string",
@@ -111,6 +111,17 @@
           "maximum": 600,
           "scope": "machine",
           "description": "Native calculation timeout in seconds."
+        },
+        "ahmedSpreadsheet.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Optional path to a Python interpreter with LibreOffice UNO bindings. Windows uses LibreOffice bundled Python by default."
+        },
+        "ahmedSpreadsheet.autoRecalculate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Recalculate the open native document after edits."
         }
       }
     },

@@ -7,3 +7,5 @@ html,body,#root{margin:0;padding:0;width:100%;height:100%;overflow:hidden}
 .ahmed-calculation-bar details[open]{position:absolute;bottom:32px;right:8px;max-width:500px;max-height:50vh;overflow:auto;background:var(--excel-cell-bg);border:1px solid var(--excel-muted-line);padding:8px}
 .ahmed-cell-comment{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:850px){.ahmed-cell-comment{display:none}}
+
+.ahmed-native-blocker{position:fixed;inset:0 0 32px;z-index:1000;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--vscode-editor-background,#fff) 80%,transparent);color:var(--vscode-editor-foreground,#333);font:14px sans-serif}

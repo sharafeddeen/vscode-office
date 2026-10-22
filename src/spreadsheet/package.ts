@@ -31,6 +31,7 @@ export interface WorkbookInfo {
     formulaCount: number;
     date1904?: boolean;
     warnings: string[];
+    arrays?: Record<string,{anchor:string;ref:string}[]>;
 }
 export async function inspectWorkbook(buffer: Uint8Array | ArrayBuffer): Promise<WorkbookInfo> {
     const zip = await JSZip.loadAsync(buffer);
@@ -46,6 +47,7 @@ export async function inspectWorkbook(buffer: Uint8Array | ArrayBuffer): Promise
         return { name: s['@_name'], state: s['@_state'] ?? 'visible', path: resolvePart('xl/workbook.xml', rel['@_Target']) };
     });
     let missingResults = 0, formulaCount = 0;
+    const arrays:Record<string,{anchor:string;ref:string}[]>={};
     for (const sheet of sheets) {
         const part = zip.file(sheet.path);
         if (!part) throw new Error('Missing worksheet: ' + sheet.name);
@@ -54,6 +56,7 @@ export async function inspectWorkbook(buffer: Uint8Array | ArrayBuffer): Promise
             for (const cell of list<any>(row.c)) {
                 if (!Object.hasOwn(cell, 'f')) continue;
                 formulaCount++;
+                if(cell.f?.['@_t']==='array' && cell.f?.['@_ref'])(arrays[sheet.name] ??= []).push({anchor:cell['@_r'],ref:cell.f['@_ref']});
                 if (!Object.hasOwn(cell, 'v') || (cell.v === '' && cell['@_t'] !== 'str')) missingResults++;
             }
         }
@@ -65,7 +68,7 @@ export async function inspectWorkbook(buffer: Uint8Array | ArrayBuffer): Promise
     if (names.some(n => /^xl\/externalLinks\//.test(n))) warnings.push('External links are not refreshed.');
     if (names.some(n => /vbaProject\.bin$/i.test(n))) warnings.push('Macros are not executed.');
     if (names.some(n => /^xl\/threadedComments\//.test(n))) warnings.push('Threaded comments are not displayed.');
-    return { sheets, formulaCount, missingResults, warnings, date1904 };
+    return { sheets, formulaCount, missingResults, warnings, date1904, arrays };
 }
 
 /** Normalize a disposable ZIP for ExcelJS. The source bytes are never written back.

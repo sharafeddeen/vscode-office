@@ -551,6 +551,7 @@ export default class DataProxy {
   }
 
   moveRows(sri, eri, insertAt) {
+    if(this.nativeCommand?.({action:'moveRows',index:sri,end:eri,destination:insertAt}))return;
     this.changeData(() => {
       const rowRemap = this.rows.moveRange(sri, eri, insertAt);
       if (!rowRemap) return;
@@ -572,6 +573,7 @@ export default class DataProxy {
   }
 
   moveColumns(sci, eci, insertAt) {
+    if(this.nativeCommand?.({action:'moveColumns',index:sci,end:eci,destination:insertAt}))return;
     this.changeData(() => {
       const { cols, rows } = this;
       const built = helper.buildIndexRemap(cols.len, sci, eci, insertAt);
@@ -612,14 +614,17 @@ export default class DataProxy {
   }
 
   canUndo() {
+    if(this.nativeHistory)return this.nativeHistory.undo;
     return this.history.canUndo();
   }
 
   canRedo() {
+    if(this.nativeHistory)return this.nativeHistory.redo;
     return this.history.canRedo();
   }
 
   undo() {
+    if(this.nativeCommand?.({action:'undo'}))return;
     this.history.undo(this.getData(), (d) => {
       this.setData(d);
       this.change(this.getData());
@@ -627,6 +632,7 @@ export default class DataProxy {
   }
 
   redo() {
+    if(this.nativeCommand?.({action:'redo'}))return;
     this.history.redo(this.getData(), (d) => {
       this.setData(d);
       this.change(this.getData());
@@ -1247,6 +1253,8 @@ export default class DataProxy {
 
   // type: row | column
   insert(type, n = 1) {
+    const selection=this.selector.range;
+    if(this.nativeCommand?.({action:type==='row'?'insertRows':'insertColumns',index:type==='row'?selection.sri:selection.sci,count:n}))return;
     this.changeData(() => {
       const { sri, sci } = this.selector.range;
       const { rows, merges, cols } = this;
@@ -1275,6 +1283,8 @@ export default class DataProxy {
 
   // type: row | column
   delete(type) {
+    const selection=this.selector.range;
+    if(this.nativeCommand?.({action:type==='row'?'deleteRows':'deleteColumns',index:type==='row'?selection.sri:selection.sci,count:type==='row'?selection.eri-selection.sri+1:selection.eci-selection.sci+1}))return;
     this.changeData(() => {
       const {
         rows, merges, selector, cols,

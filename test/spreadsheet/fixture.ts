@@ -44,3 +44,17 @@ export async function fixture(options: {unusualComments?:boolean; missing?:boole
     }
     return zip.generateAsync({type:'uint8array'});
 }
+
+export async function nativeFixture(){
+    const book=new ExcelJS.Workbook();await book.xlsx.load(await fixture() as any);
+    book.definedNames.add('Inputs!$A$1','Efficiency');
+    const sheet=book.worksheets[0];
+    sheet.getCell('J2').value={formula:'90/Efficiency',result:90};
+    sheet.addConditionalFormatting({ref:'J2',rules:[{type:'cellIs',operator:'greaterThan',formulae:[95],style:{font:{bold:true}}}]});
+    sheet.getCell('L2').value={formula:'ROW(L2:L4)-ROW(L2)+1',result:1,shareType:'array',ref:'L2:L4'} as any;
+    sheet.getCell('L3').value=0;sheet.getCell('L4').value=0;
+    sheet.getCell('N2').value={formula:'0',result:0};
+    sheet.getCell('N3').value={formula:'FALSE()',result:false};
+    sheet.getCell('N4').value={formula:'""',result:''};
+    return new Uint8Array(await book.xlsx.writeBuffer());
+}

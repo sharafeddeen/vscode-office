@@ -1,6 +1,6 @@
 # Ahmed Spreadsheet Viewer
 
-The complete Office Viewer spreadsheet interface inside VS Code, with workbook compatibility fixes, faithful saved formula results and native recalculation on temporary copies.
+The complete Office Viewer spreadsheet interface inside VS Code, with workbook compatibility fixes and a persistent LibreOffice document for edits, calculations and saving.
 
 This is Ahmed's independently identified fork of [cweijan/vscode-office](https://github.com/cweijan/vscode-office). Its extension ID is `sharafeddeen.ahmed-spreadsheet-viewer`. Only its spreadsheet provider is registered.
 
@@ -11,10 +11,10 @@ npm ci
 npm test
 npm run build
 npm run package
-code --install-extension ahmed-spreadsheet-viewer-0.1.1.vsix --force
+code --install-extension ahmed-spreadsheet-viewer-0.2.0.vsix --force
 ```
 
-Reload VS Code, then use **Reopen Editor With → Ahmed Spreadsheet Viewer**. Excel/LibreOffice is optional for saved-result viewing and required for native recalculation.
+Reload VS Code, then use **Reopen Editor With → Ahmed Spreadsheet Viewer**. Saved-result viewing works without LibreOffice. Workbook editing requires LibreOffice and Python UNO; Windows normally uses LibreOffice’s bundled Python. CSV/TSV editing remains independent.
 
 The original project remains available upstream; its source files, history and MIT license are retained.
 

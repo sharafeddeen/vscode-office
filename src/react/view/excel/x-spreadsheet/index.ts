@@ -89,6 +89,8 @@ export interface ColProperties {
 export interface CellData {
     /** Imported preview data must never be recalculated by the limited canvas evaluator. */
     previewCell?: boolean;
+    /** Native array output; never sent back as an independent input edit. */
+    nativeDerived?: boolean;
     date1904?: boolean;
     formulaPreview?: boolean;
     savedValue?: string | number | boolean;
@@ -220,6 +222,8 @@ export class Spreadsheet {
     private options: Options;
     private sheetIndex: number;
     private datas: DataProxy[];
+    private nativeCommand?: (command:any)=>void;
+    setNativeCommandHandler(handler?: (command:any)=>void){this.nativeCommand=handler;}
     private bottombar: Bottombar | null;
     private data: DataProxy;
     private sheet: Sheet;
@@ -239,6 +243,7 @@ export class Spreadsheet {
         this.bottombar = this.options.showBottomBar ? new Bottombar(
             () => {
                 if (this.options.mode === 'read') return;
+                if(this.nativeCommand){this.nativeCommand({action:'addSheet',name:this.uniqueSheetName('Sheet'),index:this.datas.length});return;}
                 const d = this.addSheet();
                 this.sheet.resetData(d);
             },
@@ -254,6 +259,7 @@ export class Spreadsheet {
                 this.handleSheetMenu(key);
             },
             (index: number, value: string) => {
+                if(this.nativeCommand){this.nativeCommand({action:'renameSheet',sheet:index,name:value});return;}
                 this.datas[index].name = value;
                 this.sheet.trigger('change');
             },
@@ -277,6 +283,7 @@ export class Spreadsheet {
     addSheet(name?: string, active = true): DataProxy {
         const n = name || `sheet${this.sheetIndex}`;
         const d = new DataProxy(n, this.options);
+        d.nativeCommand=(command:any)=>{if(this.nativeCommand){this.nativeCommand({...command,sheet:this.datas.indexOf(d)});return true;}return false;};
         d.change = (...args: any[]) => {
             this.sheet.trigger('change', ...args);
         };
@@ -290,6 +297,7 @@ export class Spreadsheet {
     }
 
     deleteSheet(): void {
+        if(this.nativeCommand){this.nativeCommand({action:'deleteSheet',sheet:this.bottombar?.getContextSheetIndex() ?? this.getActiveSheetIndex()});return;}
         if (this.bottombar === null) return;
 
         const [oldIndex, nindex] = this.bottombar.deleteItem();
@@ -331,6 +339,7 @@ export class Spreadsheet {
     }
 
     moveSheetTo(from: number, to: number): void {
+        if(this.nativeCommand){this.nativeCommand({action:'moveSheet',sheet:from,index:to});return;}
         if (this.bottombar === null) return;
         if (from === to || from < 0 || to < 0 || from >= this.datas.length || to >= this.datas.length) return;
         const [sheet] = this.datas.splice(from, 1);
@@ -351,6 +360,7 @@ export class Spreadsheet {
         if (!source) return;
 
         const copyName = this.uniqueSheetName(source.name);
+        if(this.nativeCommand){this.nativeCommand({action:'duplicateSheet',sheet:sourceIndex,name:copyName,index:sourceIndex+1});return;}
         const sheetData = JSON.parse(JSON.stringify(source.getData())) as SheetData;
         sheetData.name = copyName;
 

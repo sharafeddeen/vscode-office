@@ -26,3 +26,21 @@ jobs:
         with:
           name: spreadsheet-viewer-${{ matrix.os }}
           path: ahmed-spreadsheet-viewer.vsix
+
+  native-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install LibreOffice and Python UNO
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libreoffice-calc python3-uno
+      - run: npm ci --no-audit --no-fund
+      - name: Test native document editing and calculation
+        run: npm test
+        env:
+          RUN_UNO: '1'
+          RUN_NATIVE: '1'
+          NATIVE_BACKEND: libreoffice

@@ -1,3 +1,14 @@
+# Ahmed Spreadsheet Viewer 0.2.0
+
+- Persistent Python UNO session: LibreOffice owns the complete workbook during edits, calculation and saving.
+- Native cell/formula/format edits, undo/redo, insert/delete rows/columns and sheet operations.
+- Preserve native named ranges and supported metadata instead of rebuilding workbooks from the grid.
+- Import complete calculated output ranges, including array outputs and native number formats.
+- Save/Save As/backup use native exports; conflicts and unsupported edit types produce explicit errors.
+- Atomic native checkpoints and reconnection after cancellation or worker failure.
+- Read-only workbook preview when UNO is unavailable; CSV/TSV keep their text-oriented save path.
+- Native tests on Windows, Linux native CI, and actual VS Code webview coverage for metadata/arrays/recovery.
+
 # Ahmed Spreadsheet Viewer 0.1.1
 
 - Restore the full upstream spreadsheet interface, toolbar, editing, formatting, find/replace and theme controls.
